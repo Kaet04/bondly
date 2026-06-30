@@ -15,6 +15,8 @@ const THEMES = {
   daylight: {
     name:"Daylight", swatch:["#FF6B8A","#FFB347","#7C6FF0"],
     bg:"#FBF7F4", surface:"#FFFFFF", surface2:"#F4EFEA",
+    glass:"rgba(255,247,244,0.72)", glassBorder:"rgba(100,60,80,0.12)",
+    bgScene:"radial-gradient(120% 60% at 50% -10%, rgba(255,107,138,0.15), rgba(124,111,240,0.07) 50%, #FBF7F4 80%)",
     line:"rgba(60,40,55,0.08)", line2:"rgba(60,40,55,0.16)",
     text:"#332433", sub:"rgba(51,36,51,0.56)", faint:"rgba(51,36,51,0.34)",
     a1:"#FF6B8A", a2:"#7C6FF0", a3:"#FFB347", a4:"#3BC9A8", a5:"#5BB8F0",
@@ -22,6 +24,8 @@ const THEMES = {
   blush: {
     name:"Blush", swatch:["#E8638C","#F5A65B","#B57BD8"],
     bg:"#FFF5F7", surface:"#FFFFFF", surface2:"#FCEBF0",
+    glass:"rgba(255,245,247,0.72)", glassBorder:"rgba(180,60,110,0.12)",
+    bgScene:"radial-gradient(120% 60% at 50% -10%, rgba(232,99,140,0.16), rgba(181,123,216,0.09) 50%, #FFF5F7 80%)",
     line:"rgba(180,60,110,0.1)", line2:"rgba(180,60,110,0.18)",
     text:"#3D2030", sub:"rgba(61,32,48,0.56)", faint:"rgba(61,32,48,0.34)",
     a1:"#E8638C", a2:"#B57BD8", a3:"#F5A65B", a4:"#3BC9A8", a5:"#5BB8F0",
@@ -29,6 +33,8 @@ const THEMES = {
   aurora: {
     name:"Aurora", swatch:["#3DEBC8","#FF5BAE","#FFC857"],
     bg:"#1A0F1E", surface:"#2B1830", surface2:"#352038",
+    glass:"rgba(43,24,48,0.55)", glassBorder:"rgba(255,210,180,0.2)",
+    bgScene:"radial-gradient(120% 70% at 50% -10%, rgba(255,91,174,0.32), rgba(181,123,255,0.14) 42%, #1A0F1E 78%)",
     line:"rgba(255,210,180,0.1)", line2:"rgba(255,210,180,0.2)",
     text:"#FFF4EC", sub:"rgba(255,244,236,0.6)", faint:"rgba(255,244,236,0.36)",
     a1:"#FF5BAE", a2:"#B57BFF", a3:"#FFC857", a4:"#3DEBC8", a5:"#5BC8FF",
@@ -36,6 +42,8 @@ const THEMES = {
   sage: {
     name:"Sage", swatch:["#5BA88A","#E0A458","#7C9AD8"],
     bg:"#F6F8F4", surface:"#FFFFFF", surface2:"#EBF0E8",
+    glass:"rgba(246,248,244,0.72)", glassBorder:"rgba(40,70,50,0.12)",
+    bgScene:"radial-gradient(120% 60% at 50% -10%, rgba(91,168,138,0.14), rgba(124,154,216,0.07) 50%, #F6F8F4 80%)",
     line:"rgba(40,70,50,0.09)", line2:"rgba(40,70,50,0.16)",
     text:"#243028", sub:"rgba(36,48,40,0.56)", faint:"rgba(36,48,40,0.34)",
     a1:"#5BA88A", a2:"#7C9AD8", a3:"#E0A458", a4:"#3BC9A8", a5:"#5BB8F0",
@@ -83,6 +91,8 @@ const GAMES=[
   {id:"tap",name:"Tap Frenesia",emoji:"👆",g:"a4",group:"arcade",mode:"both",play:"solo",ch:2,desc:"Tocca solo i bersagli giusti, evita le bombe",time:"2 min",cp:35},
   {id:"stack",name:"Torre dei Sogni",emoji:"🗼",g:"a5",group:"arcade",mode:"both",play:"solo",ch:1,desc:"Impila i blocchi al momento giusto, più in alto possibile",time:"2 min",cp:40},
   {id:"snake",name:"Snake Romantico",emoji:"🐍",g:"a3",group:"arcade",mode:"both",play:"solo",ch:1,desc:"Mangia i cuori e cresci, senza sbattere!",time:"3 min",cp:40},
+  {id:"simon",name:"Simon Romantico",emoji:"🧠",g:"a2",group:"arcade",mode:"both",play:"solo",ch:1,desc:"Ricorda la sequenza di cuori e ripetila",time:"3 min",cp:40},
+  {id:"intruso",name:"Trova l'Intruso",emoji:"🔍",g:"a3",group:"arcade",mode:"both",play:"solo",ch:2,desc:"Trova l'emoji diversa il più in fretta possibile!",time:"2 min",cp:35},
   // Puzzle & Memoria
   {id:"memory",name:"Memoria di Coppia",emoji:"🃏",g:"a2",group:"puzzle",mode:"both",play:"solo",ch:1,desc:"Ricordate i dettagli dell'altro",time:"5 min",cp:40},
   // Drawing & Art
@@ -809,7 +819,7 @@ function Home({cp,wallet,tokens,setTokens,streak,avatars,setTab,T,G,onToast,open
 
 // ════════ GAMES ════════
 // ── Live game lobby: wait for partner to join (simulated) ──
-function LiveLobby({game,onReady,onCancel,T,G}){
+function LiveLobby({game,onReady,onCancel,partnerName,T,G}){
   const [dots,setDots]=useState(1);
   const [joined,setJoined]=useState(false);
   useEffect(()=>{const d=setInterval(()=>setDots(v=>v%3+1),500);return()=>clearInterval(d);},[]);
@@ -823,31 +833,32 @@ function LiveLobby({game,onReady,onCancel,T,G}){
       <div style={{width:96,height:96,borderRadius:"50%",background:joined?G.a4:G.hero,display:"flex",alignItems:"center",justifyContent:"center",fontSize:44,animation:joined?"none":"pulse2 1.2s ease-in-out infinite"}}>{joined?"✅":"💑"}</div>
     </div>
     {!joined?<>
-      <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:8}}>In attesa di Federica{".".repeat(dots)}</div>
-      <div style={{fontSize:14,color:T.sub,lineHeight:1.5,maxWidth:280,marginBottom:30}}>Per giocare in tempo reale dovete essere connessi entrambi. Abbiamo avvisato Federica che la stai aspettando.</div>
+      <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:8}}>In attesa di {partnerName}{".".repeat(dots)}</div>
+      <div style={{fontSize:14,color:T.sub,lineHeight:1.5,maxWidth:280,marginBottom:30}}>Per giocare in tempo reale dovete essere connessi entrambi. Abbiamo avvisato {partnerName} che la stai aspettando.</div>
       <button onClick={onCancel} style={{background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",color:T.sub,border:`1px solid ${T.line2}`,borderRadius:14,padding:"12px 24px",fontSize:14,fontWeight:700,cursor:"pointer"}}>Annulla</button>
     </>:<>
-      <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,color:T.a4,marginBottom:8}}>Federica è entrata! 💞</div>
+      <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,color:T.a4,marginBottom:8}}>{partnerName} è entrato/a! 💞</div>
       <div style={{fontSize:14,color:T.sub}}>Si parte...</div>
     </>}
   </div>);
 }
 
 // ── Turn-based game: turn sent, waiting for partner ──
-function TurnSent({game,onClose,T,G}){
+function TurnSent({game,onClose,partnerName,T,G}){
   return(<div style={{minHeight:"70vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",padding:"40px 24px"}}>
     <div style={{width:96,height:96,borderRadius:"50%",background:G.a3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:44,marginBottom:24}}>📨</div>
     <div style={{fontFamily:"'Sora',sans-serif",fontSize:23,fontWeight:800,marginBottom:10}}>Turno inviato!</div>
-    <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,marginBottom:8}}>Hai completato il tuo turno di <b style={{color:T.text}}>{game.name}</b>. Ora tocca a Federica.</div>
+    <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,marginBottom:8}}>Hai completato il tuo turno di <b style={{color:T.text}}>{game.name}</b>. Ora tocca a {partnerName}.</div>
     <div style={{background:`${T.a3}12`,border:`1px solid ${T.a3}30`,borderRadius:16,padding:"14px 18px",margin:"14px 0 26px",maxWidth:320}}>
-      <div style={{fontSize:13,color:T.sub,lineHeight:1.5}}>🕓 La partita resta <b style={{color:T.a3}}>in sospeso</b>. Quando Federica finisce il suo turno, la trovi pronta nella tua <b style={{color:T.text}}>Home</b>.</div>
+      <div style={{fontSize:13,color:T.sub,lineHeight:1.5}}>🕓 La partita resta <b style={{color:T.a3}}>in sospeso</b>. Quando {partnerName} finisce il suo turno, la trovi pronta nella tua <b style={{color:T.text}}>Home</b>.</div>
     </div>
     <Btn T={T} grad={G.hero} onClick={onClose}>Ho capito</Btn>
   </div>);
 }
 
-function Games({cp,setCp,onToast,T,G,pendingGame,clearPending,userId,coupleId}){
+function Games({cp,setCp,onToast,T,G,pendingGame,clearPending,userId,coupleId,avatars}){
   const {c}=chapterOf(cp);
+  const partnerName=avatars?.p2?.name||"il partner";
   const [mode,setMode]=useState("live");
   const [active,setActive]=useState(null);
   const [stage,setStage]=useState(null); // null | "lobby" | "playing" | "turnsent"
@@ -860,9 +871,9 @@ function Games({cp,setCp,onToast,T,G,pendingGame,clearPending,userId,coupleId}){
     else setStage("playing");
   }
   function endGame(){setActive(null);setStage(null);}
-  if(active&&stage==="lobby") return <LiveLobby game={active} onReady={()=>setStage("playing")} onCancel={endGame} T={T} G={G}/>;
-  if(active&&stage==="turnsent") return <TurnSent game={active} onClose={endGame} T={T} G={G}/>;
-  if(active&&stage==="playing") return <Player game={active} onBack={(scenario)=>{if(syncOf(active)!=="turns")endGame();else if(scenario==="partner")endGame();else setStage("turnsent");}} setCp={setCp} onToast={onToast} T={T} G={G} userId={userId} coupleId={coupleId}/>;
+  if(active&&stage==="lobby") return <LiveLobby game={active} onReady={()=>setStage("playing")} onCancel={endGame} partnerName={partnerName} T={T} G={G}/>;
+  if(active&&stage==="turnsent") return <TurnSent game={active} onClose={endGame} partnerName={partnerName} T={T} G={G}/>;
+  if(active&&stage==="playing") return <Player game={active} onBack={(scenario)=>{if(syncOf(active)!=="turns")endGame();else if(scenario==="partner")endGame();else setStage("turnsent");}} setCp={setCp} onToast={onToast} T={T} G={G} userId={userId} coupleId={coupleId} partnerName={partnerName}/>;
   const matchMode=g=>syncOf(g)===mode;
   const totalUnlocked=GAMES.filter(g=>g.ch<=c.ch&&matchMode(g)).length;
 
@@ -898,7 +909,7 @@ function Games({cp,setCp,onToast,T,G,pendingGame,clearPending,userId,coupleId}){
       {/* partner online status (simulated) */}
       <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12,background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",border:`1px solid ${T.line2}`,borderRadius:14,padding:"10px 14px"}}>
         <div style={{position:"relative"}}><span style={{fontSize:18}}>💑</span><span style={{position:"absolute",bottom:-1,right:-2,width:9,height:9,borderRadius:"50%",background:"#3BC9A8",border:`2px solid ${T.surface}`}}/></div>
-        <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>Federica è online</div><div style={{fontSize:11.5,color:T.faint}}>Potete giocare in tempo reale, o a turni quando volete</div></div>
+        <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700}}>{partnerName} è online</div><div style={{fontSize:11.5,color:T.faint}}>Potete giocare in tempo reale, o a turni quando volete</div></div>
       </div>
     </div>
     {/* Mode filter — sync vs turns */}
@@ -1058,7 +1069,7 @@ function TurnQA({game,data,kind,onBack,setCp,onToast,T,G,userId,coupleId}){
   </div>);
 }
 
-function Player({game,onBack,setCp,onToast,T,G,userId,coupleId}){
+function Player({game,onBack,setCp,onToast,T,G,userId,coupleId,partnerName="il partner"}){
   const [idx,setIdx]=useState(0);const [done,setDone]=useState(false);
   const [a,setA]=useState("");const [b,setB]=useState("");const [rev,setRev]=useState(false);
   const grad=G[game.g];
@@ -1091,15 +1102,17 @@ function Player({game,onBack,setCp,onToast,T,G,userId,coupleId}){
   if(game.id==="stack") return <Stack game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
   if(game.id==="snake") return <Snake game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
   if(game.id==="wordle") return <WordGuess game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
-  if(game.id==="mostlikely") return <MostLikely game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
+  if(game.id==="mostlikely") return <MostLikely game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G} partnerName={partnerName}/>;
   if(game.id==="catch") return <CatchGame game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
   if(game.id==="tap") return <TapGame game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
+  if(game.id==="simon") return <SimonGame game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
+  if(game.id==="intruso") return <TrovaIntruso game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
   if(game.id==="trivia"||game.id==="trivia2") return <Trivia game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
 
   return(<div style={{padding:20,paddingBottom:90}}><Top/>
     <div style={{textAlign:"center",padding:"50px 0"}}><div style={{fontSize:60,marginBottom:18}}>{game.emoji}</div><div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:10}}>{game.name}</div><div style={{fontSize:15,color:T.sub,lineHeight:1.5,maxWidth:280,margin:"0 auto"}}>{game.desc}</div>
-    <div style={{fontSize:13,color:T.faint,marginTop:16,maxWidth:280,marginLeft:"auto",marginRight:"auto",lineHeight:1.5}}>🕓 Gioco a turni — la tua parte viene salvata e condivisa con Federica.</div></div>
-    <Btn T={T} grad={grad} onClick={()=>setDone(true)}>Invia il mio turno a Federica</Btn>
+    <div style={{fontSize:13,color:T.faint,marginTop:16,maxWidth:280,marginLeft:"auto",marginRight:"auto",lineHeight:1.5}}>🕓 Gioco a turni — la tua parte viene salvata e condivisa con {partnerName}.</div></div>
+    <Btn T={T} grad={grad} onClick={()=>setDone(true)}>Invia il mio turno a {partnerName}</Btn>
     <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Torna indietro</Btn>
   </div>);
 }
@@ -1358,14 +1371,15 @@ function Reflex({game,onBack,setCp,onToast,T,G}){
 // ════════ PACMAN — mangia-frutta ════════
 function Pacman({game,onBack,setCp,onToast,T,G}){
   const grad=G[game.g];
-  const N=7; // grid 7x7
-  const [phase,setPhase]=useState("intro"); // intro|play|done
+  const N=7;
+  const [phase,setPhase]=useState("intro");
   const [pac,setPac]=useState({x:3,y:3});
   const [dir,setDir]=useState("right");
   const [fruits,setFruits]=useState([]);
   const [eaten,setEaten]=useState(0);
   const [time,setTime]=useState(0);
   const tickRef=useRef(null);
+  const touchRef=useRef(null);
   const FRUITS=["🍎","🍓","🍒","🍇","🍊","🍑","🍌","🍉"];
 
   function seed(){
@@ -1375,7 +1389,17 @@ function Pacman({game,onBack,setCp,onToast,T,G}){
   }
   function start(){setPac({x:3,y:3});setDir("right");setEaten(0);setTime(0);seed();setPhase("play");}
 
-  // auto-move pacman in current direction
+  function onSwipeStart(e){const t=e.touches[0];touchRef.current={x:t.clientX,y:t.clientY};}
+  function onSwipeEnd(e){
+    if(!touchRef.current)return;
+    const t=e.changedTouches[0];
+    const dx=t.clientX-touchRef.current.x,dy=t.clientY-touchRef.current.y;
+    touchRef.current=null;
+    if(Math.abs(dx)<20&&Math.abs(dy)<20)return;
+    if(Math.abs(dx)>Math.abs(dy)){setDir(dx>0?"right":"left");}else{setDir(dy>0?"down":"up");}
+  }
+
+  // auto-move pacman at 280ms per step
   useEffect(()=>{
     if(phase!=="play")return;
     tickRef.current=setInterval(()=>{
@@ -1387,7 +1411,7 @@ function Pacman({game,onBack,setCp,onToast,T,G}){
         if(dir==="down")ny=Math.min(N-1,p.y+1);
         return{x:nx,y:ny};
       });
-    },360);
+    },280);
     return()=>clearInterval(tickRef.current);
   },[phase,dir]);
 
@@ -1433,8 +1457,8 @@ function Pacman({game,onBack,setCp,onToast,T,G}){
       <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
       <div style={{display:"flex",gap:14}}><span style={{fontSize:14,fontWeight:800,color:T.a3}}>🍎 {eaten}/10</span><span style={{fontSize:14,fontWeight:800}}>⏱ {time.toFixed(1)}s</span></div>
     </div>
-    {/* grid */}
-    <div style={{background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",borderRadius:18,border:`1px solid ${T.line2}`,padding:8,aspectRatio:"1",display:"grid",gridTemplateColumns:`repeat(${N},1fr)`,gridTemplateRows:`repeat(${N},1fr)`,gap:2}}>
+    {/* grid with swipe */}
+    <div onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} style={{background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",borderRadius:18,border:`1px solid ${T.line2}`,padding:8,aspectRatio:"1",display:"grid",gridTemplateColumns:`repeat(${N},1fr)`,gridTemplateRows:`repeat(${N},1fr)`,gap:2,touchAction:"none"}}>
       {Array.from({length:N*N}).map((_,i)=>{const x=i%N,y=Math.floor(i/N);const f=fruits.find(ff=>ff.x===x&&ff.y===y);const isPac=pac.x===x&&pac.y===y;
         return(<div key={i} style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:"min(5vw,22px)",borderRadius:6,background:isPac?`${T.a3}22`:"transparent"}}>
           {isPac?<span style={{transform:`rotate(${rot}deg)`,transition:"transform 0.15s"}}>🟡</span>:f?f.e:""}
@@ -1449,7 +1473,7 @@ function Pacman({game,onBack,setCp,onToast,T,G}){
         <DBtn T={T} grad={grad} on={()=>setDir("right")}>▶</DBtn>
       </div>
     </div>
-    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:12}}>La palla si muove da sola — cambia direzione con le frecce</div>
+    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:12}}>Frecce o swipe sul campo per cambiare direzione 👆</div>
   </div>);
 }
 function DBtn({children,on,T,grad}){
@@ -1552,17 +1576,17 @@ function Stack({game,onBack,setCp,onToast,T,G}){
   const [cur,setCur]=useState({x:0,w:60,dir:1});
   const [score,setScore]=useState(0);
   const reqRef=useRef(null);
-  const BW=200; // board width units
-  const SPEED=2.2;
+  const BW=200;
 
   function start(){setBlocks([{x:70,w:60}]);setCur({x:0,w:60,dir:1});setScore(0);setPhase("play");}
-  // animate moving block
+  // animate moving block — speed scales with score
   useEffect(()=>{
     if(phase!=="play")return;
+    const speed=2.2+score*0.15;
     let raf;
     const step=()=>{
       setCur(c=>{
-        let nx=c.x+c.dir*SPEED;
+        let nx=c.x+c.dir*speed;
         if(nx<0){nx=0;return{...c,x:nx,dir:1};}
         if(nx+c.w>BW){nx=BW-c.w;return{...c,x:nx,dir:-1};}
         return{...c,x:nx};
@@ -1571,7 +1595,7 @@ function Stack({game,onBack,setCp,onToast,T,G}){
     };
     raf=requestAnimationFrame(step);
     return()=>cancelAnimationFrame(raf);
-  },[phase]);
+  },[phase,score]);
 
   function drop(){
     const top=blocks[blocks.length-1];
@@ -1728,7 +1752,6 @@ function WordGuess({game,onBack,setCp,onToast,T,G}){
 }
 
 // ════════ MOST LIKELY — chi è più probabile ════════
-// tracks which daily sets are completed this session (resets on reload; real app uses backend)
 const DAILY_DONE={};
 // ── Domanda del giorno (one shared question per day) ──
 const DAILY_QUESTIONS=[
@@ -1745,24 +1768,30 @@ const DAILY_QUESTIONS=[
 ];
 // shared daily answer state (session): who answered, what
 const DAILY_Q_STATE={}; // key dayNumber -> {mine, partner}
-// discoveries log: pairs of matched / surprising answers across games (session)
-const DISCOVERIES=[]; // {q, mine, partner, match}
+// discoveries log: pairs of matched / surprising answers across games (persisted)
+const DISCOVERIES=_lsGet('bly_discoveries',[]);
 function logDiscovery(q,mine,partner){
   if(!q||mine==null||partner==null)return;
-  if(DISCOVERIES.find(d=>d.q===q))return; // one per question
+  if(DISCOVERIES.find(d=>d.q===q))return;
   DISCOVERIES.unshift({q,mine,partner,match:mine===partner});
   if(DISCOVERIES.length>40)DISCOVERIES.pop();
+  _lsSet('bly_discoveries',DISCOVERIES);
 }
-const READ_ARTICLES=new Set(); // expert articles already read (session)
-// ── Turn-based async state (session memory; real app = backend, per couple) ──
-// TURN_STATE[gameId] = { consumed:Set of used question indices, pending:[{i, mine, partner}] }
+const _lsGet=(k,fb)=>{try{const v=localStorage.getItem(k);return v!==null?JSON.parse(v):fb;}catch{return fb;}};
+const _lsSet=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}};
+const READ_ARTICLES=new Set(_lsGet('bly_read_arts',[]));
+// ── Turn-based async state persisted to localStorage per game ──
 const TURN_STATE={};
-function turnState(id){if(!TURN_STATE[id])TURN_STATE[id]={consumed:new Set(),pending:[]};return TURN_STATE[id];}
-// pick next unused index for a game's data length; returns -1 if all consumed
+function turnState(id){
+  if(!TURN_STATE[id]){
+    const saved=_lsGet(`bly_ts_${id}`,null);
+    TURN_STATE[id]={consumed:new Set(saved?.consumed||[]),pending:saved?.pending||[]};
+  }
+  return TURN_STATE[id];
+}
+function _saveTurnState(id){const st=TURN_STATE[id];if(st)_lsSet(`bly_ts_${id}`,{consumed:[...st.consumed],pending:st.pending});}
 function nextUnused(id,len){const st=turnState(id);for(let i=0;i<len;i++)if(!st.consumed.has(i))return i;return -1;}
-// simulated: does Federica already have a pending answer waiting for me? (one of the scenarios)
 function partnerPendingFor(id){const st=turnState(id);return st.pending.find(p=>p.partner!=null&&p.mine==null);}
-// when opening a game from Home "your turn", first question is partner-first
 const FORCE_PARTNER_NEXT={on:false};
 const MOSTLIKELY=[
   // quotidiano
@@ -1783,7 +1812,7 @@ const MOSTLIKELY=[
   "...fa il primo passo a letto?","...proporrebbe una fuga romantica last-minute?","...invierebbe un messaggio audace?",
   "...sceglierebbe il film più piccante?","...sussurra cose dolci all'orecchio?",
 ];
-function MostLikely({game,onBack,setCp,onToast,T,G}){
+function MostLikely({game,onBack,setCp,onToast,T,G,partnerName="il partner"}){
   const grad=G[game.g];
   const st=turnState(game.id);
   const [qi,setQi]=useState(()=>nextUnused(game.id,MOSTLIKELY.length));
@@ -1808,7 +1837,7 @@ function MostLikely({game,onBack,setCp,onToast,T,G}){
     else{setPhase("waiting");setTimeout(()=>setPhase("reveal"),1600);}
   }
   function next(){
-    st.consumed.add(qi);setCp(p=>p+Math.round(game.cp/3));
+    st.consumed.add(qi);_saveTurnState(game.id);setCp(p=>p+Math.round(game.cp/3));
     const nxt=nextUnused(game.id,MOSTLIKELY.length);
     if(nxt<0)setPhase("empty");
     else{setQi(nxt);setMine(null);setScenario(Math.random()<0.5?"mine":"partner");setPhase("answer");}
@@ -1819,7 +1848,7 @@ function MostLikely({game,onBack,setCp,onToast,T,G}){
     <div style={{textAlign:"center",fontSize:12,fontWeight:700,color:T.a2,textTransform:"uppercase",letterSpacing:0.5,marginBottom:6}}>🕓 a turni</div>
 
     {scenario==="partner"&&phase==="answer"&&(
-      <div style={{display:"flex",alignItems:"center",gap:10,background:`${T.a3}12`,border:`1px solid ${T.a3}33`,borderRadius:14,padding:"10px 14px",marginBottom:16}}><span style={{fontSize:20}}>💞</span><div style={{fontSize:12.5,color:T.sub,fontWeight:600}}>Federica ha già risposto. Tocca a te — poi vedete i risultati!</div></div>
+      <div style={{display:"flex",alignItems:"center",gap:10,background:`${T.a3}12`,border:`1px solid ${T.a3}33`,borderRadius:14,padding:"10px 14px",marginBottom:16}}><span style={{fontSize:20}}>💞</span><div style={{fontSize:12.5,color:T.sub,fontWeight:600}}>{partnerName} ha già risposto. Tocca a te — poi vedete i risultati!</div></div>
     )}
 
     <div style={{display:"flex",flexDirection:"column",justifyContent:"center",minHeight:150,textAlign:"center",padding:"10px 0"}}>
@@ -1828,10 +1857,10 @@ function MostLikely({game,onBack,setCp,onToast,T,G}){
     </div>
 
     {phase==="answer"&&<>
-      <div style={{fontSize:13,color:T.sub,textAlign:"center",marginBottom:14}}>{scenario==="partner"?"Scegli la tua risposta 💌":"Scegli — arriva a Federica 💌"}</div>
+      <div style={{fontSize:13,color:T.sub,textAlign:"center",marginBottom:14}}>{scenario==="partner"?"Scegli la tua risposta 💌":`Scegli — arriva a ${partnerName} 💌`}</div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div onClick={()=>choose("me")} style={{background:G.a4,color:"#fff",borderRadius:18,padding:"18px",textAlign:"center",fontSize:17,fontWeight:800,cursor:"pointer"}}>Io 🙋</div>
-        <div onClick={()=>choose("partner")} style={{background:G.a1,color:"#fff",borderRadius:18,padding:"18px",textAlign:"center",fontSize:17,fontWeight:800,cursor:"pointer"}}>Federica 💞</div>
+        <div onClick={()=>choose("partner")} style={{background:G.a1,color:"#fff",borderRadius:18,padding:"18px",textAlign:"center",fontSize:17,fontWeight:800,cursor:"pointer"}}>{partnerName} 💞</div>
       </div>
     </>}
 
@@ -1839,17 +1868,141 @@ function MostLikely({game,onBack,setCp,onToast,T,G}){
       <style>{`@keyframes dotpulse{0%,100%{opacity:0.3}50%{opacity:1}}`}</style>
       <div style={{width:80,height:80,borderRadius:"50%",background:`${T.a3}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:38,margin:"0 auto 18px"}}>📨</div>
       <div style={{fontFamily:"'Sora',sans-serif",fontSize:18,fontWeight:800,marginBottom:6}}>Risposta inviata!</div>
-      <div style={{fontSize:14,color:T.sub}}>In attesa che Federica risponda<span style={{animation:"dotpulse 1s infinite"}}>...</span></div>
+      <div style={{fontSize:14,color:T.sub}}>In attesa che {partnerName} risponda<span style={{animation:"dotpulse 1s infinite"}}>...</span></div>
     </div>}
 
     {phase==="reveal"&&<>
       <div style={{background:mine===partnerPick?`${T.a4}12`:`${T.a3}12`,border:`1px solid ${mine===partnerPick?T.a4:T.a3}40`,borderRadius:18,padding:"16px",textAlign:"center",marginBottom:16}}>
         <div style={{fontSize:30}}>{mine===partnerPick?"🎯":"😄"}</div>
         <div style={{fontFamily:"'Sora',sans-serif",fontSize:16,fontWeight:800,marginTop:6}}>{mine===partnerPick?"D'accordo!":"Avete risposto diverso!"}</div>
-        <div style={{fontSize:13,color:T.sub,marginTop:6}}>Tu: {mine==="me"?"Io":"Federica"} · Federica: {partnerPick==="me"?"te":"se stessa"}</div>
+        <div style={{fontSize:13,color:T.sub,marginTop:6}}>Tu: {mine==="me"?"Io":partnerName} · {partnerName}: {partnerPick==="me"?"te":"se stesso/a"}</div>
       </div>
       <Btn T={T} grad={grad} onClick={next}>Prossima →</Btn>
     </>}
+  </div>);
+}
+
+// ════════ SIMON — memoria romantica ════════
+function SimonGame({game,onBack,setCp,onToast,T,G}){
+  const grad=G[game.g];
+  const BTNS=[{e:"💕",c:"#FF5E8A"},{e:"💜",c:"#7C6FF0"},{e:"🧡",c:"#FFB347"},{e:"💚",c:"#3DEBC8"}];
+  const [phase,setPhase]=useState("intro");
+  const [seq,setSeq]=useState([]);
+  const [input,setInput]=useState([]);
+  const [active,setActive]=useState(null);
+  const [round,setRound]=useState(0);
+
+  function start(){const s=[Math.floor(Math.random()*4)];setSeq(s);setInput([]);setRound(1);setPhase("show");}
+  useEffect(()=>{
+    if(phase!=="show")return;
+    let i=0;
+    function next(){
+      if(i>=seq.length){setActive(null);setTimeout(()=>setPhase("input"),400);return;}
+      setActive(null);setTimeout(()=>{setActive(seq[i]);i++;setTimeout(next,650);},200);
+    }
+    const t=setTimeout(next,500);
+    return()=>clearTimeout(t);
+  },[phase,seq]);
+
+  function tap(id){
+    if(phase!=="input")return;
+    setActive(id);setTimeout(()=>setActive(null),200);
+    const ns=[...input,id];
+    for(let i=0;i<ns.length;i++){if(ns[i]!==seq[i]){setTimeout(()=>{if(round>1)setCp(p=>p+game.cp);setPhase("over");},400);return;}}
+    if(ns.length===seq.length){
+      const next=[...seq,Math.floor(Math.random()*4)];
+      setSeq(next);setInput([]);setRound(r=>r+1);setTimeout(()=>setPhase("show"),700);
+    } else setInput(ns);
+  }
+
+  if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
+    <div style={{textAlign:"center",padding:"36px 0"}}><div style={{fontSize:60,marginBottom:18}}>🧠</div><div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Simon Romantico</div><div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Guarda la sequenza di cuori colorati e ripetila. Ogni round aggiunge un passo. Chi ricorda la sequenza più lunga vince! 💕</div></div>
+    <Btn T={T} grad={grad} onClick={start}>Inizia 🧠</Btn>
+  </div>);
+  if(phase==="over")return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
+    <div style={{fontSize:60,marginBottom:16}}>🧠</div><div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Memoria finita!</div>
+    <div style={{fontSize:42,fontWeight:800,color:T.a2,marginBottom:4}}>{round-1}</div><div style={{fontSize:14,color:T.sub,marginBottom:8}}>round completati</div>
+    <div style={{fontSize:13,color:T.faint,marginBottom:30}}>{round>1?`+${game.cp} punti · ora tocca al partner! 😏`:"Riprovate!"}</div>
+    <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn><Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
+  </div>);
+  return(<div style={{padding:20,paddingBottom:90}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
+      <div><span style={{fontSize:14,fontWeight:800,color:T.a2}}>🧠 Round {round}</span><span style={{fontSize:13,color:T.faint,marginLeft:12}}>{phase==="show"?"Guarda...":"Tocca!"}</span></div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginTop:8}}>
+      {BTNS.map((b,id)=><div key={id} onClick={()=>tap(id)} style={{height:130,borderRadius:22,background:active===id?b.c:`${b.c}44`,border:`3px solid ${active===id?b.c:b.c+'55'}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:46,cursor:"pointer",transition:"all 0.15s",transform:active===id?"scale(1.06)":"scale(1)",boxShadow:active===id?`0 8px 24px ${b.c}66`:"none"}}>{b.e}</div>)}
+    </div>
+    <div style={{textAlign:"center",marginTop:20,fontSize:14,color:T.faint}}>{phase==="show"?`Osserva la sequenza (${seq.length} step)`:`Ripeti ${seq.length} cuori nell'ordine giusto`}</div>
+  </div>);
+}
+
+// ════════ TROVA L'INTRUSO — spot the odd one ════════
+function TrovaIntruso({game,onBack,setCp,onToast,T,G}){
+  const grad=G[game.g];
+  const SETS=[
+    ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨"],
+    ["🍎","🍊","🍋","🍇","🍓","🍒","🍑","🥭","🍍"],
+    ["⚽","🏀","🏈","⚾","🎾","🏐","🏉","🎱","🏓"],
+    ["🌹","🌻","🌸","🌺","🌼","💐","🌷","🌿","🍀"],
+    ["✈️","🚀","🚁","🛸","🛩️","🚂","🚗","⛵","🛶"],
+    ["🎸","🎹","🎺","🎻","🥁","🎷","🪗","🪘","🎵"],
+    ["😀","😄","😁","😆","😊","😍","🥰","😘","😏"],
+    ["🌙","⭐","🌟","✨","💫","🌠","☀️","🌤️","⛅"],
+  ];
+  const [phase,setPhase]=useState("intro");
+  const [round,setRound]=useState(0);
+  const [score,setScore]=useState(0);
+  const [grid,setGrid]=useState([]);
+  const [odd,setOdd]=useState(-1);
+  const [revealed,setRevealed]=useState(false);
+  const [startMs,setStartMs]=useState(0);
+  const [bestMs,setBestMs]=useState(null);
+
+  function makeRound(r){
+    const base=SETS[r%SETS.length];
+    const g=base.slice(0,8);
+    const odd=Math.floor(Math.random()*8);
+    const intruder=SETS[(r+1)%SETS.length][Math.floor(Math.random()*9)];
+    const cells=[...g.slice(0,odd),intruder,...g.slice(odd)];
+    setGrid(cells);setOdd(odd);setRevealed(false);setStartMs(Date.now());
+  }
+  function start(){setRound(0);setScore(0);setBestMs(null);makeRound(0);setPhase("play");}
+  function pick(i){
+    if(revealed)return;
+    const ms=Date.now()-startMs;
+    if(i===odd){
+      setScore(s=>s+Math.max(10,50-Math.floor(ms/100)));
+      setBestMs(b=>b===null?ms:Math.min(b,ms));
+      setRevealed(true);
+      setTimeout(()=>{if(round>=6){setCp(p=>p+game.cp);setPhase("done");}else{setRound(r=>{const nr=r+1;makeRound(nr);return nr;});}},900);
+    } else {
+      setScore(s=>Math.max(0,s-5));
+      setRevealed(true);
+      setTimeout(()=>{makeRound(round);setRevealed(false);},900);
+    }
+  }
+
+  if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
+    <div style={{textAlign:"center",padding:"36px 0"}}><div style={{fontSize:60,marginBottom:18}}>🔍</div><div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Trova l'Intruso</div><div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>In ogni griglia c'è un'emoji diversa da tutte le altre. Trovala più in fretta che puoi! Sfidate chi ha il record di velocità.</div></div>
+    <Btn T={T} grad={grad} onClick={start}>Inizia 🔍</Btn>
+  </div>);
+  if(phase==="done")return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
+    <div style={{fontSize:60,marginBottom:16}}>🔍</div><div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Bravissimo!</div>
+    <div style={{fontSize:42,fontWeight:800,color:T.a3,marginBottom:4}}>{score}</div><div style={{fontSize:14,color:T.sub,marginBottom:8}}>punti totali</div>
+    {bestMs&&<div style={{fontSize:13,color:T.a4,marginBottom:8,fontWeight:700}}>Miglior tempo: {(bestMs/1000).toFixed(1)}s ⚡</div>}
+    <div style={{fontSize:13,color:T.faint,marginBottom:30}}>+{game.cp} punti · ora tocca al partner! 😏</div>
+    <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn><Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
+  </div>);
+  return(<div style={{padding:20,paddingBottom:90}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
+      <div style={{display:"flex",gap:14}}><span style={{fontSize:14,fontWeight:800,color:T.a3}}>🔍 {score}</span><span style={{fontSize:13,color:T.faint}}>{round+1}/7</span></div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+      {grid.map((e,i)=><div key={i} onClick={()=>pick(i)} style={{aspectRatio:"1",borderRadius:16,background:revealed&&i===odd?`${T.a4}22`:T.glass||T.surface,backdropFilter:T.glass?"blur(10px)":"none",WebkitBackdropFilter:T.glass?"blur(10px)":"none",border:`2px solid ${revealed&&i===odd?T.a4:T.line2}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"min(9vw,38px)",cursor:"pointer",transition:"all 0.2s",transform:revealed&&i===odd?"scale(1.08)":"scale(1)"}}>{e}</div>)}
+    </div>
+    <div style={{fontSize:13,color:T.faint,textAlign:"center",marginTop:16}}>Tocca l'emoji diversa dalle altre 🔍</div>
   </div>);
 }
 
@@ -1864,6 +2017,7 @@ function Snake({game,onBack,setCp,onToast,T,G}){
   const [score,setScore]=useState(0);
   const dirRef=useRef(dir);dirRef.current=dir;
   const snakeRef=useRef(snake);snakeRef.current=snake;
+  const swipeRef=useRef(null);
 
   function placeFood(sn){let f;do{f={x:Math.floor(Math.random()*N),y:Math.floor(Math.random()*N)};}while(sn.some(s=>s.x===f.x&&s.y===f.y));return f;}
   function start(){const s=[{x:6,y:6}];setSnake(s);setDir({x:1,y:0});setFood(placeFood(s));setScore(0);setPhase("play");}
@@ -1885,6 +2039,13 @@ function Snake({game,onBack,setCp,onToast,T,G}){
   },[phase,food,score]);
 
   function turn(nx,ny){const d=dirRef.current;if(d.x===-nx&&d.y===-ny)return;setDir({x:nx,y:ny});}
+  function swipeStart(e){const t=e.touches[0];swipeRef.current={x:t.clientX,y:t.clientY};}
+  function swipeEnd(e){
+    if(!swipeRef.current)return;
+    const t=e.changedTouches[0];const dx=t.clientX-swipeRef.current.x,dy=t.clientY-swipeRef.current.y;swipeRef.current=null;
+    if(Math.abs(dx)<20&&Math.abs(dy)<20)return;
+    if(Math.abs(dx)>Math.abs(dy)){turn(dx>0?1:-1,0);}else{turn(0,dy>0?1:-1);}
+  }
 
   if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
@@ -1904,7 +2065,7 @@ function Snake({game,onBack,setCp,onToast,T,G}){
       <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
       <span style={{fontSize:16,fontWeight:800,color:T.a3}}>💕 {score}</span>
     </div>
-    <div style={{aspectRatio:"1",background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",borderRadius:16,border:`1px solid ${T.line2}`,padding:6,display:"grid",gridTemplateColumns:`repeat(${N},1fr)`,gridTemplateRows:`repeat(${N},1fr)`,gap:1}}>
+    <div onTouchStart={swipeStart} onTouchEnd={swipeEnd} style={{aspectRatio:"1",background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",borderRadius:16,border:`1px solid ${T.line2}`,padding:6,display:"grid",gridTemplateColumns:`repeat(${N},1fr)`,gridTemplateRows:`repeat(${N},1fr)`,gap:1,touchAction:"none"}}>
       {Array.from({length:N*N}).map((_,i)=>{const x=i%N,y=Math.floor(i/N);const isHead=snake[0].x===x&&snake[0].y===y;const isBody=snake.some((s,j)=>j>0&&s.x===x&&s.y===y);const isFood=food.x===x&&food.y===y;
         return<div key={i} style={{borderRadius:isHead?5:3,background:isHead?grad:isBody?T.a3:isFood?"transparent":"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"min(3.5vw,14px)"}}>{isFood?"💕":""}</div>;})}
     </div>
@@ -1917,6 +2078,7 @@ function Snake({game,onBack,setCp,onToast,T,G}){
         <DBtn T={T} grad={grad} on={()=>turn(1,0)}>▶</DBtn>
       </div>
     </div>
+    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:10}}>Frecce o swipe sul campo 👆</div>
   </div>);
 }
 
@@ -2028,7 +2190,7 @@ function Experts({onToast,setCp,T,G}){
       <div style={{fontSize:11.5,color:T.faint,lineHeight:1.5,background:T.surface2,borderRadius:12,padding:"11px 13px",marginTop:6,marginBottom:4}}>ℹ️ Divulgazione basata su ricerche e libri pubblici di {e.author}. Bondly non sostituisce un percorso con un professionista.</div>
       {already
         ? <div style={{marginTop:12,background:`${T.a4}12`,border:`1px solid ${T.a4}33`,borderRadius:16,padding:"14px 16px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:T.a4}}>✓ Già letto</div><div style={{fontSize:12.5,color:T.sub,marginTop:2}}>Ricompensa già riscossa</div></div>
-        : <Btn T={T} grad={grad} onClick={()=>{READ_ARTICLES.add(key(e));setCp(p=>p+30);onToast("+30 punti · articolo letto");setOpen(null);}} style={{marginTop:12}}>Ho letto · +30 punti</Btn>}
+        : <Btn T={T} grad={grad} onClick={()=>{READ_ARTICLES.add(key(e));_lsSet('bly_read_arts',[...READ_ARTICLES]);setCp(p=>p+30);onToast("+30 punti · articolo letto");setOpen(null);}} style={{marginTop:12}}>Ho letto · +30 punti</Btn>}
     </div>);
   }
   return(<div style={{paddingBottom:90}}>
@@ -2333,7 +2495,6 @@ function Avatar({data,T,G,size=120,bg=false}){
       case"afro":return <g fill={`url(#hair-${uid})`}><circle cx="50" cy="26" r="22"/><circle cx="30" cy="34" r="10"/><circle cx="70" cy="34" r="10"/></g>;
       case"bob":return <path d="M26 42 Q26 14 50 14 Q74 14 74 42 L74 56 Q74 48 68 46 L68 40 Q50 30 32 40 L32 46 Q26 48 26 56 Z" fill={`url(#hair-${uid})`}/>;
       case"messy":return <g fill={`url(#hair-${uid})`}><path d="M27 40 Q25 16 50 15 Q75 16 73 40 Q73 30 64 31 Q62 24 54 27 Q50 22 46 27 Q38 24 36 31 Q27 30 27 40 Z"/><circle cx="34" cy="20" r="4"/><circle cx="66" cy="20" r="4"/></g>;
-      case"long":return <path d="M26 40 Q26 13 50 13 Q74 13 74 40 L76 82 Q76 66 69 60 L69 40 Q50 29 31 40 L31 60 Q24 66 24 82 Z" fill={`url(#hair-${uid})`}/>;
       case"wavylong":return <path d="M25 40 Q25 12 50 12 Q75 12 75 40 Q78 60 73 84 Q71 74 68 70 Q72 56 68 44 Q50 30 32 44 Q28 56 32 70 Q29 74 27 84 Q22 60 25 40 Z" fill={`url(#hair-${uid})`}/>;
       case"braids":return <g fill={`url(#hair-${uid})`}><path d="M28 40 Q28 15 50 15 Q72 15 72 40 Q72 27 50 27 Q28 27 28 40 Z"/><g><circle cx="28" cy="48" r="3"/><circle cx="28" cy="56" r="3"/><circle cx="28" cy="64" r="3"/><circle cx="72" cy="48" r="3"/><circle cx="72" cy="56" r="3"/><circle cx="72" cy="64" r="3"/></g></g>;
       case"twin":return <g fill={`url(#hair-${uid})`}><path d="M28 40 Q28 15 50 15 Q72 15 72 40 Q72 27 50 27 Q28 27 28 40 Z"/><circle cx="26" cy="46" r="7"/><circle cx="74" cy="46" r="7"/></g>;
@@ -2970,7 +3131,7 @@ function Arena({tokens,setTokens,tickets,setTickets,avatars,onToast,T,G}){
   return(<div style={{paddingBottom:90}}>
     <div style={{padding:"18px 18px 0"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><div style={{fontFamily:"'Sora',sans-serif",fontSize:26,fontWeight:800,letterSpacing:-0.6}}>Arena</div><div style={{fontSize:14,color:T.sub,marginTop:3}}>🕓 Sfide a turni · gettoni in comune con Federica</div></div>
+        <div><div style={{fontFamily:"'Sora',sans-serif",fontSize:26,fontWeight:800,letterSpacing:-0.6}}>Arena</div><div style={{fontSize:14,color:T.sub,marginTop:3}}>🕓 Sfide a turni · gettoni in comune con {avatars?.p2?.name||"il partner"}</div></div>
         <div style={{background:`${T.a3}18`,border:`1px solid ${T.a3}40`,borderRadius:16,padding:"8px 14px",textAlign:"center"}}>
           <div style={{fontSize:18,fontWeight:800,color:T.a3}}>🪙 {tokens}</div>
           <div style={{fontSize:10,color:T.faint}}>Gettoni di coppia</div>
@@ -3380,7 +3541,7 @@ function Auth({T,G,onDone}){
               </div>
             ))}
           </div>
-          <div style={{fontSize:11.5,color:T.faint,textAlign:"center",marginTop:16,lineHeight:1.5}}>È solo un punto di partenza estetico. Federica creerà il suo avatar dal suo telefono 💞</div>
+          <div style={{fontSize:11.5,color:T.faint,textAlign:"center",marginTop:16,lineHeight:1.5}}>È solo un punto di partenza estetico. Il tuo partner creerà il suo avatar dal suo telefono 💞</div>
         </>:<>
           {/* HYBRID: avatar left + contextual colors right (sticky) */}
           <div style={{position:"sticky",top:0,zIndex:50,background:T.bg,paddingBottom:10}}>
@@ -3885,20 +4046,38 @@ function CoupleSetup({T,G,userId,onDone}){
 }
 
 export default function Bondly(){
-  const [themeName,setThemeName]=useState("midnight");
-  const T=THEMES[themeName];
+  const [themeName,setThemeName]=useState(()=>_lsGet('bly_theme','midnight'));
+  const T=THEMES[themeName]||THEMES.midnight;
   const G=grads(T);
   const [tab,setTab]=useState("home");
-  const [pendingGame,setPendingGame]=useState(null); // game id to open directly from Home "your turn"
-  const [cp,setCp]=useState(2640);
-  const [wallet,setWallet]=useState(28.50);
-  const [tokens,setTokens]=useState(420);
-  const [tickets,setTickets]=useState(2);
-  const [wheelDone,setWheelDone]=useState(false);
-  const [avatars,setAvatars]=useState(DEFAULT_AVATARS);
-  const [ownedItems,setOwnedItems]=useState(["sun","pearls"]);
-  const [streak]=useState(23);
+  const [pendingGame,setPendingGame]=useState(null);
+  const [cp,setCp]=useState(()=>_lsGet('bly_cp',0));
+  const [wallet,setWallet]=useState(()=>_lsGet('bly_wallet',0));
+  const [tokens,setTokens]=useState(()=>_lsGet('bly_tokens',0));
+  const [tickets,setTickets]=useState(()=>_lsGet('bly_tickets',0));
+  const _today=new Date().toDateString();
+  const [wheelDone,setWheelDoneRaw]=useState(()=>_lsGet('bly_wheeld',null)===_today);
+  const setWheelDone=useCallback((v)=>{if(v)_lsSet('bly_wheeld',new Date().toDateString());setWheelDoneRaw(v);},[]);
+  const [avatars,setAvatars]=useState(()=>_lsGet('bly_avatars',DEFAULT_AVATARS));
+  const [ownedItems,setOwnedItems]=useState(()=>_lsGet('bly_owned',["sun","pearls"]));
+  const [streak,setStreak]=useState(()=>_lsGet('bly_streak',0));
   const [onboard,setOnboard]=useState(true);
+  // Persist state changes
+  useEffect(()=>{_lsSet('bly_theme',themeName);},[themeName]);
+  useEffect(()=>{_lsSet('bly_cp',cp);},[cp]);
+  useEffect(()=>{_lsSet('bly_wallet',wallet);},[wallet]);
+  useEffect(()=>{_lsSet('bly_tokens',tokens);},[tokens]);
+  useEffect(()=>{_lsSet('bly_tickets',tickets);},[tickets]);
+  useEffect(()=>{_lsSet('bly_avatars',avatars);},[avatars]);
+  useEffect(()=>{_lsSet('bly_owned',ownedItems);},[ownedItems]);
+  useEffect(()=>{_lsSet('bly_streak',streak);},[streak]);
+  // Sync own avatar to Supabase so partner devices can read it
+  useEffect(()=>{
+    if(!userId||!avatars.p1)return;
+    const av=avatars.p1;
+    _lsSet('bly_my_avatar',av);
+    supabase.from("profiles").update({avatar:av,name:av.name}).eq("id",userId).catch(()=>{});
+  },[userId,avatars.p1]);
   const [toast,setToast]=useState({msg:"",visible:false});
   const onToast=useCallback(m=>{setToast({msg:m,visible:true});setTimeout(()=>setToast(t=>({...t,visible:false})),2200);},[]);
   const nav=[{id:"home",i:"⌂",l:"Home"},{id:"arena",i:"⚔",l:"Arena"},{id:"games",i:"🎮",l:"Gioca",star:true},{id:"experts",i:"❀",l:"Esperti"},{id:"rewards",i:"◈",l:"Premi"}];
@@ -3909,24 +4088,54 @@ export default function Bondly(){
   const [coupleReady,setCoupleReady]=useState(false);
   const [splash,setSplash]=useState(true);
   useEffect(()=>{const t=setTimeout(()=>setSplash(false),2500);return()=>clearTimeout(t);},[]);
+  const loadPartnerProfile=useCallback(async(uid,cid)=>{
+    try{
+      const{data:couple}=await supabase.from("couples").select("member_a,member_b").eq("id",cid).single();
+      if(!couple)return;
+      const pid=couple.member_a===uid?couple.member_b:couple.member_a;
+      if(!pid)return;
+      const{data:pp}=await supabase.from("profiles").select("name,avatar").eq("id",pid).single();
+      if(pp){
+        setAvatars(a=>({...a,p2:{...DEFAULT_AVATARS.p2,...(pp.avatar||{}),name:pp.name||a.p2.name}}));
+      }
+    }catch{}
+  },[]);
   useEffect(()=>{
     supabase.auth.getSession().then(async({data:{session}})=>{
       if(!session)return;
       const uid=session.user.id;
       setUserId(uid);
       const name=session.user.user_metadata?.full_name||session.user.user_metadata?.name||"Utente";
-      await supabase.from("profiles").upsert({id:uid,name},{onConflict:"id",ignoreDuplicates:true});
-      const{data:prof}=await supabase.from("profiles").select("couple_id").eq("id",uid).single();
-      setCoupleId(prof?.couple_id||null);
+      const myAvatar=_lsGet('bly_my_avatar',null);
+      await supabase.from("profiles").upsert({id:uid,name,...(myAvatar?{avatar:myAvatar}:{})},{onConflict:"id",ignoreDuplicates:false}).catch(()=>
+        supabase.from("profiles").upsert({id:uid,name},{onConflict:"id",ignoreDuplicates:true})
+      );
+      const{data:prof}=await supabase.from("profiles").select("couple_id,avatar,name").eq("id",uid).single();
+      const cid=prof?.couple_id||null;
+      setCoupleId(cid);
+      // load own avatar from supabase if richer than local
+      if(prof?.avatar){
+        setAvatars(a=>({...a,p1:{...DEFAULT_AVATARS.p1,...prof.avatar,name:prof.name||a.p1.name}}));
+      }
+      // load partner profile
+      if(cid)await loadPartnerProfile(uid,cid);
       setCoupleReady(true);
       setOnboard(false);
+      // track daily streak
+      const todayStr=new Date().toDateString();
+      const lastLogin=_lsGet('bly_streak_date',null);
+      if(lastLogin!==todayStr){
+        const yesterday=new Date(Date.now()-86400000).toDateString();
+        setStreak(s=>lastLogin===yesterday?s+1:1);
+        _lsSet('bly_streak_date',todayStr);
+      }
       setAuthed(true);
     });
     const{data:{subscription}}=supabase.auth.onAuthStateChange((event)=>{
       if(event==="SIGNED_OUT"){setAuthed(false);setOnboard(true);setCoupleId(null);setCoupleReady(false);setUserId(null);}
     });
     return()=>subscription.unsubscribe();
-  },[]);
+  },[loadPartnerProfile]);
   const scrollRef=useRef(null);
   useEffect(()=>{
     const reset=()=>{if(scrollRef.current)scrollRef.current.scrollTop=0;if(typeof window!=="undefined")window.scrollTo(0,0);};
@@ -3938,7 +4147,14 @@ export default function Bondly(){
   },[tab]);
   if(splash) return <Splash T={T} G={G}/>;
   if(!authed) return <Auth T={T} G={G} onDone={async(av)=>{
-    if(av)setAvatars(a=>({...a,p1:{...DEFAULT_AVATARS.p1,...av}}));
+    const isNewSignup=!!av;
+    if(av){
+      setAvatars(a=>({...a,p1:{...DEFAULT_AVATARS.p1,...av}}));
+      // award starter tokens for new users
+      setTokens(t=>t===0?200:t);
+      setStreak(1);
+      _lsSet('bly_streak_date',new Date().toDateString());
+    }
     const{data:{session}}=await supabase.auth.getSession();
     if(session){
       const uid=session.user.id;
@@ -3952,7 +4168,7 @@ export default function Bondly(){
     setAuthed(true);
   }}/>;
   if(authed&&!coupleReady) return <Splash T={T} G={G}/>;
-  if(authed&&coupleReady&&!coupleId) return <CoupleSetup T={T} G={G} userId={userId} onDone={(cid)=>setCoupleId(cid)}/>;
+  if(authed&&coupleReady&&!coupleId) return <CoupleSetup T={T} G={G} userId={userId} onDone={(cid)=>{setCoupleId(cid);if(cid&&userId)loadPartnerProfile(userId,cid);}}/>;
   if(onboard) return <Onboarding T={T} G={G} onDone={()=>setOnboard(false)}/>;
 
   return(<div style={{fontFamily:"'Manrope',-apple-system,'Segoe UI',sans-serif",background:T.bgScene||T.bg,height:"100vh",maxWidth:440,margin:"0 auto",color:T.text,display:"flex",flexDirection:"column",overflow:"hidden",transition:"background 0.4s,color 0.4s",position:"relative"}}>
@@ -3989,7 +4205,7 @@ export default function Bondly(){
     </div>
     <div ref={scrollRef} style={{flex:1,overflowY:"auto",minHeight:0,WebkitOverflowScrolling:"touch",position:"relative",zIndex:1}}>
       {tab==="home"   &&<Home cp={cp} wallet={wallet} tokens={tokens} setTokens={setTokens} streak={streak} avatars={avatars} setTab={setTab} T={T} G={G} onToast={onToast} openGame={(id)=>{setPendingGame(id);setTab("games");}} userId={userId} coupleId={coupleId}/>}
-      {tab==="games"  &&<Games cp={cp} setCp={setCp} onToast={onToast} T={T} G={G} pendingGame={pendingGame} clearPending={()=>setPendingGame(null)} userId={userId} coupleId={coupleId}/>}
+      {tab==="games"  &&<Games cp={cp} setCp={setCp} onToast={onToast} T={T} G={G} pendingGame={pendingGame} clearPending={()=>setPendingGame(null)} userId={userId} coupleId={coupleId} avatars={avatars}/>}
       {tab==="arena"  &&<Arena tokens={tokens} setTokens={setTokens} tickets={tickets} setTickets={setTickets} avatars={avatars} onToast={onToast} T={T} G={G}/>}
       {tab==="experts"&&<Experts onToast={onToast} setCp={setCp} T={T} G={G}/>}
       {tab==="rewards"&&<Rewards wallet={wallet} setWallet={setWallet} tokens={tokens} setTokens={setTokens} tickets={tickets} setTickets={setTickets} onToast={onToast} T={T} G={G}/>}
