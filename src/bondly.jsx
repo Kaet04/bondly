@@ -107,6 +107,7 @@ const GAMES=[
   {id:"flappy",name:"Cuore Volante",emoji:"❤️",g:"a1",group:"arcade",mode:"both",play:"solo",ch:1,desc:"Fai volare il cuore tra gli ostacoli, batti il tuo record!",time:"3 min",cp:45},
   {id:"memory_cards",name:"Carte Coppia",emoji:"🃏",g:"a2",group:"puzzle",mode:"both",play:"solo",ch:1,desc:"Trova tutte le coppie romantiche. Sfida la memoria!",time:"3 min",cp:45},
   {id:"bubble",name:"Scoppia Bolle",emoji:"🫧",g:"a4",group:"arcade",mode:"both",play:"solo",ch:1,desc:"Scoppia più bolle che puoi in 30 secondi!",time:"1 min",cp:30},
+  {id:"reaction",name:"Reaction Battle",emoji:"💕",g:"a1",group:"arcade",mode:"both",play:"solo",ch:1,desc:"Tocca tutti i cuori prima che spariscano! Chi è più reattivo?",time:"30 sec",cp:35},
 ];
 const GROUPS=[
   {id:"connect",name:"Quiz di Coppia",sub:"Conoscervi più a fondo",emoji:"💞",g:"a1"},
@@ -528,6 +529,86 @@ function Sheet({children,onClose,T}){return <div onClick={onClose} style={{posit
 function Pill({children,grad}){return <span style={{background:grad,color:"#fff",borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700}}>{children}</span>;}
 function Section({title,sub,T}){return <div style={{padding:"22px 18px 10px"}}><div style={{fontSize:13,fontWeight:700,color:T.sub,letterSpacing:0.4,textTransform:"uppercase"}}>{title}</div>{sub&&<div style={{fontSize:13,color:T.faint,marginTop:3}}>{sub}</div>}</div>;}
 
+// ════════ LOVE NOTES ════════
+const NOTE_EMOJIS=["💕","🌹","😍","🥰","💌","✨","🌙","🎀","🦋","💫"];
+function LoveNotes({userId,coupleId,partnerName,T,G}){
+  const [notes,setNotes]=useState([]);
+  const [composing,setComposing]=useState(false);
+  const [msg,setMsg]=useState("");
+  const [emoji,setEmoji]=useState("💕");
+  const [sending,setSending]=useState(false);
+
+  useEffect(()=>{
+    if(!coupleId)return;
+    supabase.from("love_notes").select("id,from_user,message,emoji,created_at").eq("couple_id",coupleId).order("created_at",{ascending:false}).limit(5).then(({data})=>{if(data)setNotes(data);});
+    const ch=supabase.channel("notes-"+coupleId)
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"love_notes",filter:`couple_id=eq.${coupleId}`},(p)=>{setNotes(prev=>[p.new,...prev].slice(0,5));})
+      .subscribe();
+    return()=>supabase.removeChannel(ch);
+  },[coupleId]);
+
+  async function send(){
+    if(!msg.trim()||!coupleId||!userId)return;
+    setSending(true);
+    await supabase.from("love_notes").insert({couple_id:coupleId,from_user:userId,message:msg.trim(),emoji}).catch(()=>{});
+    setMsg("");setSending(false);setComposing(false);
+  }
+
+  const latest=notes[0];
+  const isFromMe=latest?.from_user===userId;
+
+  return(<div style={{padding:"0 18px"}}>
+    <style>{`@keyframes noteSlide{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}`}</style>
+    {!composing?(
+      <div style={{borderRadius:20,background:T.glass||T.surface,backdropFilter:T.glass?"blur(14px)":"none",WebkitBackdropFilter:T.glass?"blur(14px)":"none",border:`1px solid ${T.line2}`,overflow:"hidden"}}>
+        <div style={{padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{fontSize:11,fontWeight:800,color:T.a1,letterSpacing:0.5,textTransform:"uppercase"}}>💌 Note d'amore</span>
+          <div onClick={()=>setComposing(true)} style={{fontSize:11,fontWeight:800,color:"#fff",background:G.a1,borderRadius:10,padding:"4px 10px",cursor:"pointer"}}>+ Scrivi</div>
+        </div>
+        {latest?(
+          <div style={{padding:"0 14px 13px",animation:"noteSlide 0.4s ease"}}>
+            <div style={{background:T.surface2,borderRadius:14,padding:"11px 13px"}}>
+              <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                <span style={{fontSize:22,flexShrink:0}}>{latest.emoji}</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13.5,fontWeight:600,lineHeight:1.45,color:T.text}}>{latest.message}</div>
+                  <div style={{fontSize:11,color:T.faint,marginTop:4}}>{isFromMe?"Tu":"♥ "+partnerName} · {new Date(latest.created_at).toLocaleDateString("it",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
+                </div>
+              </div>
+            </div>
+            {notes.length>1&&<div style={{display:"flex",gap:5,marginTop:8,overflowX:"auto",paddingBottom:2}}>
+              {notes.slice(1).map(n=>(
+                <div key={n.id} style={{flexShrink:0,background:T.surface2,borderRadius:12,padding:"7px 10px",maxWidth:160}}>
+                  <div style={{fontSize:14}}>{n.emoji}</div>
+                  <div style={{fontSize:11.5,color:T.sub,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.message}</div>
+                </div>
+              ))}
+            </div>}
+          </div>
+        ):(
+          <div style={{padding:"0 14px 13px",textAlign:"center",color:T.faint,fontSize:13}}>Nessuna nota ancora — scrivi la prima! 💕</div>
+        )}
+      </div>
+    ):(
+      <div style={{borderRadius:20,background:T.glass||T.surface,backdropFilter:T.glass?"blur(14px)":"none",WebkitBackdropFilter:T.glass?"blur(14px)":"none",border:`1px solid ${T.a1}55`,padding:"14px",animation:"noteSlide 0.3s ease"}}>
+        <div style={{fontSize:12,fontWeight:800,color:T.a1,marginBottom:10}}>💌 Scrivi una nota a {partnerName}</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+          {NOTE_EMOJIS.map(e=>(<span key={e} onClick={()=>setEmoji(e)} style={{fontSize:22,cursor:"pointer",borderRadius:10,padding:"4px 6px",background:emoji===e?`${T.a1}22`:"transparent",border:emoji===e?`1px solid ${T.a1}55`:"1px solid transparent"}}>{e}</span>))}
+        </div>
+        <textarea value={msg} onChange={e=>setMsg(e.target.value.slice(0,120))} placeholder="Scrivi qualcosa di dolce..." rows={3}
+          style={{width:"100%",border:`1px solid ${T.line2}`,borderRadius:12,padding:"10px 12px",fontSize:14,background:T.surface2,color:T.text,resize:"none",outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+        <div style={{fontSize:11,color:T.faint,textAlign:"right",marginTop:3}}>{msg.length}/120</div>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <div onClick={()=>setComposing(false)} style={{flex:1,textAlign:"center",padding:"10px",borderRadius:12,border:`1px solid ${T.line2}`,fontSize:13,fontWeight:700,color:T.sub,cursor:"pointer"}}>Annulla</div>
+          <div onClick={send} style={{flex:2,textAlign:"center",padding:"10px",borderRadius:12,background:msg.trim()&&!sending?G.a1:"rgba(128,128,128,0.3)",fontSize:13,fontWeight:800,color:"#fff",cursor:msg.trim()&&!sending?"pointer":"default"}}>
+            {sending?"Invio...":"Invia 💕"}
+          </div>
+        </div>
+      </div>
+    )}
+  </div>);
+}
+
 // ════════ ONBOARDING ════════
 function Onboarding({T,G,onDone}){
   const [step,setStep]=useState(0);
@@ -615,8 +696,9 @@ function ChaptersModal({cp,onClose,T,G}){
     </div>
   );
 }
-function Home({cp,wallet,tokens,setTokens,streak,avatars,setTab,T,G,onToast,openGame,userId,coupleId}){
+function Home({cp,wallet,tokens,setTokens,streak,avatars,setTab,T,G,onToast,openGame,userId,coupleId,coupleStartedAt}){
   const {c,n,pct}=chapterOf(cp);
+  const daysTogetherNum=coupleStartedAt?Math.max(0,Math.floor((Date.now()-new Date(coupleStartedAt).getTime())/86400000)):null;
   const [showChapters,setShowChapters]=useState(false);
   const activeCount=CHAPTERS.filter(x=>!x.soon).length;
   const dailyReady=tokens<150; // show free daily recharge prompt when low
@@ -736,7 +818,7 @@ function Home({cp,wallet,tokens,setTokens,streak,avatars,setTab,T,G,onToast,open
         </div>
       </div>
       <div onClick={()=>setTab("profile")} style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,letterSpacing:-0.5,marginTop:10,cursor:"pointer"}}>{avatars.p1.name} & {avatars.p2.name}</div>
-      <div style={{fontSize:13,color:T.sub,marginTop:2}}>Insieme da 847 giorni · {streak}🔥 di serie</div>
+      <div style={{fontSize:13,color:T.sub,marginTop:2}}>{daysTogetherNum!=null?`Insieme da ${daysTogetherNum} giorn${daysTogetherNum===1?"o":"i"} 💑 ·`:""} {streak}🔥 di serie</div>
     </div>
 
     {/* ── The journey banner — motivating, goal-driven ── */}
@@ -802,6 +884,9 @@ function Home({cp,wallet,tokens,setTokens,streak,avatars,setTab,T,G,onToast,open
         </div>
       </div>
     )}
+
+    {/* ── Love Notes ── */}
+    {coupleId&&<div style={{padding:"22px 0 0"}}><LoveNotes userId={userId} coupleId={coupleId} partnerName={avatars.p2.name} T={T} G={G}/></div>}
 
     {/* ── Supporting features (secondary to playing) ── */}
     <div style={{padding:"24px 18px 0"}}>
@@ -1114,6 +1199,7 @@ function Player({game,onBack,setCp,onToast,T,G,userId,coupleId,partnerName="il p
   if(game.id==="flappy") return <FlappyHeart game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
   if(game.id==="memory_cards") return <MemoryCards game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
   if(game.id==="bubble") return <BubblePop game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
+  if(game.id==="reaction") return <ReactionBattle game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
   if(game.id==="trivia"||game.id==="trivia2") return <Trivia game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
 
   return(<div style={{padding:20,paddingBottom:90}}><Top/>
@@ -1716,6 +1802,154 @@ function CatchGame({game,onBack,setCp,onToast,T,G}){
 }
 
 // ════════ TAP — tap frenesia ════════
+// ════════ REACTION BATTLE — Canvas target game ════════
+function ReactionBattle({game,onBack,setCp,onToast,T,G}){
+  const CW=300,CH=440;
+  const canvasRef=useRef(null);
+  const stRef=useRef(null);
+  const rafRef=useRef(null);
+  const [phase,setPhase]=useState("intro");
+  const [displayScore,setDisplayScore]=useState(0);
+  const [displayTime,setDisplayTime]=useState(25);
+  const [isNewBest,setIsNewBest]=useState(false);
+  const finalRef=useRef(0);
+
+  function makeTarget(fr){
+    const r=26+Math.random()*18;
+    return{x:r+Math.random()*(CW-r*2),y:60+r+Math.random()*(CH-120-r*2),r,life:0,maxLife:100-Math.min(fr*0.4,55),color:[T.a1,T.a2,T.a3][Math.floor(Math.random()*3)],scale:0,hit:false,hitLife:0};
+  }
+
+  function drawScene(ctx,st){
+    ctx.fillStyle=T.bg||'#0d0a1a';ctx.fillRect(0,0,CW,CH);
+    // Stars bg
+    ctx.fillStyle='rgba(255,255,255,0.04)';
+    for(let i=0;i<30;i++){ctx.beginPath();ctx.arc((i*47)%CW,(i*31+20)%CH,1,0,Math.PI*2);ctx.fill();}
+    // Targets
+    st.targets.forEach(tg=>{
+      if(tg.hit){
+        const a=tg.hitLife/20;ctx.globalAlpha=a;
+        for(let i=0;i<6;i++){ctx.fillStyle=tg.color;ctx.shadowColor=tg.color;ctx.shadowBlur=10;ctx.beginPath();ctx.arc(tg.x+Math.cos(i*Math.PI/3)*tg.r*tg.hitLife/10,tg.y+Math.sin(i*Math.PI/3)*tg.r*tg.hitLife/10,5*(1-a),0,Math.PI*2);ctx.fill();}
+        ctx.globalAlpha=1;ctx.shadowBlur=0;return;
+      }
+      const sc=Math.min(1,tg.scale);const a=Math.min(1,tg.life/10);
+      // shrinking warning ring
+      const shrink=1-tg.life/tg.maxLife;
+      ctx.strokeStyle=tg.color;ctx.lineWidth=3;ctx.globalAlpha=0.35*a;ctx.shadowColor=tg.color;ctx.shadowBlur=12;
+      ctx.beginPath();ctx.arc(tg.x,tg.y,tg.r*(1+shrink*0.6),0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;ctx.shadowBlur=0;
+      // main circle
+      ctx.shadowColor=tg.color;ctx.shadowBlur=22;ctx.fillStyle=tg.color;ctx.globalAlpha=a;
+      ctx.beginPath();ctx.arc(tg.x,tg.y,tg.r*sc,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=0.35*a;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(tg.x-tg.r*0.25*sc,tg.y-tg.r*0.28*sc,tg.r*0.32*sc,0,Math.PI*2);ctx.fill();
+      ctx.globalAlpha=1;ctx.shadowBlur=0;
+      // heart
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.font=`${tg.r*0.9}px serif`;ctx.fillText('💕',tg.x,tg.y+2);
+    });
+    // HUD
+    ctx.fillStyle='rgba(0,0,0,0.5)';ctx.fillRect(0,0,CW,48);
+    ctx.fillStyle='#fff';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='bold 18px Sora,sans-serif';
+    ctx.fillText(`💕 ${st.score}`,CW/2,24);
+    // Timer bar
+    const tp=st.timeLeft/25;const tc=tp>0.5?T.a3:tp>0.25?T.a5||'#FFD700':'#ff4444';
+    ctx.fillStyle='rgba(255,255,255,0.1)';ctx.beginPath();if(ctx.roundRect)ctx.roundRect(12,36,CW-24,6,3);else ctx.rect(12,36,CW-24,6);ctx.fill();
+    ctx.shadowColor=tc;ctx.shadowBlur=8;ctx.fillStyle=tc;ctx.beginPath();if(ctx.roundRect)ctx.roundRect(12,36,(CW-24)*tp,6,3);else ctx.rect(12,36,(CW-24)*tp,6);ctx.fill();ctx.shadowBlur=0;
+    // Floating texts
+    st.floats.forEach(f=>{const a=f.l/f.ml;ctx.globalAlpha=a;ctx.fillStyle=f.c||T.a1;ctx.font=`800 ${f.sz||20}px Sora,sans-serif`;ctx.textAlign='center';ctx.fillText(f.t,f.x,f.y);ctx.globalAlpha=1;});
+  }
+
+  useEffect(()=>{
+    if(phase!=='play')return;
+    const cv=canvasRef.current;if(!cv)return;
+    const ctx=cv.getContext('2d');
+    const st={targets:[],score:0,fr:0,timeLeft:25,nextTarget:0,floats:[]};stRef.current=st;
+    st.targets.push(makeTarget(0));
+
+    function tick(){
+      st.fr++;st.timeLeft=Math.max(0,25-st.fr/60);
+      setDisplayTime(Math.ceil(st.timeLeft));
+      if(st.timeLeft<=0){
+        cancelAnimationFrame(rafRef.current);
+        finalRef.current=st.score;
+        const bst=parseInt(localStorage.getItem('bly_react_best')||'0');
+        if(st.score>bst){localStorage.setItem('bly_react_best',String(st.score));setIsNewBest(true);}
+        if(st.score>0)setCp(p=>p+game.cp);
+        drawScene(ctx,st);setPhase('over');return;
+      }
+      // update targets
+      st.targets=st.targets.filter(t=>t.hit?t.hitLife>0:t.life<t.maxLife);
+      st.targets.forEach(t=>{if(!t.hit){t.life++;t.scale=Math.min(1,t.life/8);}else t.hitLife--;});
+      // spawn new targets
+      const active=st.targets.filter(t=>!t.hit);
+      if(active.length<Math.min(3,1+Math.floor(st.fr/180))){st.targets.push(makeTarget(st.fr));}
+      // floats
+      st.floats=st.floats.filter(f=>f.l>0);st.floats.forEach(f=>{f.y+=f.vy;f.l--;});
+      drawScene(ctx,st);
+      rafRef.current=requestAnimationFrame(tick);
+    }
+    rafRef.current=requestAnimationFrame(tick);
+    return()=>cancelAnimationFrame(rafRef.current);
+  },[phase]);
+
+  function handleTap(e){
+    const st=stRef.current;if(!st)return;
+    const cv=canvasRef.current;if(!cv)return;
+    const rect=cv.getBoundingClientRect();
+    const scaleX=CW/rect.width,scaleY=CH/rect.height;
+    const touches=e.changedTouches||[e.nativeEvent||e];
+    const pts=[...touches].map(t=>({x:(t.clientX-rect.left)*scaleX,y:(t.clientY-rect.top)*scaleY}));
+    let hit=false;
+    pts.forEach(pt=>{
+      st.targets.forEach(tg=>{
+        if(!tg.hit&&Math.hypot(pt.x-tg.x,pt.y-tg.y)<tg.r*1.2){
+          tg.hit=true;tg.hitLife=20;st.score++;setDisplayScore(st.score);
+          st.floats.push({t:'+1',x:tg.x,y:tg.y-10,vy:-1.5,l:35,ml:35,c:'#FFD700',sz:22});
+          hit=true;
+        }
+      });
+    });
+  }
+
+  const best=parseInt(localStorage.getItem('bly_react_best')||'0');
+  const csw=Math.min((typeof window!=='undefined'?window.innerWidth:320)-24,340);
+  const csh=Math.round(csw*(CH/CW));
+
+  if(phase==='intro')return(<div style={{padding:20,paddingBottom:90}}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span></div>
+    <div style={{textAlign:"center",padding:"24px 0"}}>
+      <div style={{fontSize:64,marginBottom:16}}>💕</div>
+      <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Reaction Battle</div>
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Tocca tutti i cuori prima che spariscano! Hai 25 secondi. I cuori diventano sempre più veloci. Chi di voi è più reattivo?</div>
+      {best>0&&<div style={{marginTop:14,fontSize:13,color:T.a1,fontWeight:700}}>🏆 Record: {best} cuori</div>}
+    </div>
+    <Btn T={T} grad={G[game.g]} onClick={()=>setPhase('play')}>Inizia! 💕</Btn>
+  </div>);
+
+  if(phase==='over')return(<div style={{padding:24,textAlign:"center",paddingTop:60}}>
+    {isNewBest&&<WinParticles/>}
+    <div style={{fontSize:56,marginBottom:12}}>💕</div>
+    <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Tempo scaduto!</div>
+    <div style={{fontSize:52,fontWeight:900,color:T.a1,marginBottom:2}}>{finalRef.current}</div>
+    <div style={{fontSize:14,color:T.sub,marginBottom:8}}>cuori toccati in 25 secondi</div>
+    {isNewBest&&<div style={{fontSize:15,fontWeight:800,color:T.a3,marginBottom:8}}>🏆 NUOVO RECORD!</div>}
+    <div style={{fontSize:13,color:T.faint,marginBottom:4}}>Best: {Math.max(best,finalRef.current)}</div>
+    <div style={{fontSize:13,color:T.faint,marginBottom:28}}>{finalRef.current>0?`+${game.cp} punti coppia 💞`:"Riprova!"}</div>
+    <Btn T={T} grad={G[game.g]} onClick={()=>{setIsNewBest(false);setPhase('play');}}>Rigioca</Btn>
+    <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
+  </div>);
+
+  return(<div style={{padding:"12px 12px 90px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+      <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
+      <span style={{fontSize:16,fontWeight:800,color:T.a1}}>💕 {displayScore} · ⏱ {displayTime}s</span>
+    </div>
+    <div style={{display:"flex",justifyContent:"center"}}>
+      <canvas ref={canvasRef} width={CW} height={CH}
+        style={{width:csw,height:csh,borderRadius:20,border:`2px solid ${T.line2}`,display:"block",touchAction:"none",boxShadow:`0 0 40px ${T.a1}22,0 8px 32px rgba(0,0,0,0.4)`}}
+        onPointerDown={handleTap} onTouchStart={e=>{e.preventDefault();handleTap(e);}}/>
+    </div>
+    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:10}}>Tocca i cuori prima che spariscano! 💕</div>
+  </div>);
+}
+
 function TapGame({game,onBack,setCp,onToast,T,G}){
   const grad=G[game.g];
   const [phase,setPhase]=useState("intro");
@@ -4759,6 +4993,7 @@ export default function Bondly(){
   const [userId,setUserId]=useState(null);
   const [coupleId,setCoupleId]=useState(null);
   const [coupleReady,setCoupleReady]=useState(false);
+  const [coupleStartedAt,setCoupleStartedAt]=useState(()=>_lsGet('bly_couple_start',null));
   const [splash,setSplash]=useState(true);
   // Persist state to localStorage (immediate)
   useEffect(()=>{_lsSet('bly_theme',themeName);},[themeName]);
@@ -4833,11 +5068,13 @@ export default function Bondly(){
       // load partner + couple-shared cloud progress
       if(cid){
         await loadPartnerProfile(uid,cid);
-        const{data:cpd}=await supabase.from("couples").select("cp,wallet,owned_items").eq("id",cid).single();
+        const{data:cpd}=await supabase.from("couples").select("cp,wallet,owned_items,started_at,created_at").eq("id",cid).single();
         if(cpd){
           setCp(p=>Math.max(p,cpd.cp||0));
           setWallet(w=>Math.max(w,Number(cpd.wallet)||0));
           if(cpd.owned_items?.length)setOwnedItems(prev=>[...new Set([...prev,...cpd.owned_items])]);
+          const sa=cpd.started_at||cpd.created_at;
+          if(sa){setCoupleStartedAt(sa);_lsSet('bly_couple_start',sa);}
         }
       }
       setCoupleReady(true);
@@ -4958,7 +5195,7 @@ export default function Bondly(){
       </div>
     </div>
     <div ref={scrollRef} style={{flex:1,overflowY:"auto",minHeight:0,WebkitOverflowScrolling:"touch",position:"relative",zIndex:1}}>
-      {tab==="home"   &&<Home cp={cp} wallet={wallet} tokens={tokens} setTokens={setTokens} streak={streak} avatars={avatars} setTab={setTab} T={T} G={G} onToast={onToast} openGame={(id)=>{setPendingGame(id);setTab("games");}} userId={userId} coupleId={coupleId}/>}
+      {tab==="home"   &&<Home cp={cp} wallet={wallet} tokens={tokens} setTokens={setTokens} streak={streak} avatars={avatars} setTab={setTab} T={T} G={G} onToast={onToast} openGame={(id)=>{setPendingGame(id);setTab("games");}} userId={userId} coupleId={coupleId} coupleStartedAt={coupleStartedAt}/>}
       {tab==="games"  &&<Games cp={cp} setCp={setCp} onToast={onToast} T={T} G={G} pendingGame={pendingGame} clearPending={()=>setPendingGame(null)} userId={userId} coupleId={coupleId} avatars={avatars}/>}
       {tab==="arena"  &&<Arena tokens={tokens} setTokens={setTokens} tickets={tickets} setTickets={setTickets} avatars={avatars} onToast={onToast} T={T} G={G}/>}
       {tab==="experts"&&<Experts onToast={onToast} setCp={setCp} T={T} G={G}/>}
