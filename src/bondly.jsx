@@ -4062,6 +4062,14 @@ export default function Bondly(){
   const [ownedItems,setOwnedItems]=useState(()=>_lsGet('bly_owned',["sun","pearls"]));
   const [streak,setStreak]=useState(()=>_lsGet('bly_streak',0));
   const [onboard,setOnboard]=useState(true);
+  const [toast,setToast]=useState({msg:"",visible:false});
+  const onToast=useCallback(m=>{setToast({msg:m,visible:true});setTimeout(()=>setToast(t=>({...t,visible:false})),2200);},[]);
+  const nav=[{id:"home",i:"⌂",l:"Home"},{id:"arena",i:"⚔",l:"Arena"},{id:"games",i:"🎮",l:"Gioca",star:true},{id:"experts",i:"❀",l:"Esperti"},{id:"rewards",i:"◈",l:"Premi"}];
+  const [authed,setAuthed]=useState(false);
+  const [userId,setUserId]=useState(null);
+  const [coupleId,setCoupleId]=useState(null);
+  const [coupleReady,setCoupleReady]=useState(false);
+  const [splash,setSplash]=useState(true);
   // Persist state changes
   useEffect(()=>{_lsSet('bly_theme',themeName);},[themeName]);
   useEffect(()=>{_lsSet('bly_cp',cp);},[cp]);
@@ -4078,15 +4086,6 @@ export default function Bondly(){
     _lsSet('bly_my_avatar',av);
     supabase.from("profiles").update({avatar:av,name:av.name}).eq("id",userId).catch(()=>{});
   },[userId,avatars.p1]);
-  const [toast,setToast]=useState({msg:"",visible:false});
-  const onToast=useCallback(m=>{setToast({msg:m,visible:true});setTimeout(()=>setToast(t=>({...t,visible:false})),2200);},[]);
-  const nav=[{id:"home",i:"⌂",l:"Home"},{id:"arena",i:"⚔",l:"Arena"},{id:"games",i:"🎮",l:"Gioca",star:true},{id:"experts",i:"❀",l:"Esperti"},{id:"rewards",i:"◈",l:"Premi"}];
-
-  const [authed,setAuthed]=useState(false);
-  const [userId,setUserId]=useState(null);
-  const [coupleId,setCoupleId]=useState(null);
-  const [coupleReady,setCoupleReady]=useState(false);
-  const [splash,setSplash]=useState(true);
   useEffect(()=>{const t=setTimeout(()=>setSplash(false),2500);return()=>clearTimeout(t);},[]);
   const loadPartnerProfile=useCallback(async(uid,cid)=>{
     try{
