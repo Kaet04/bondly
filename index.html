@@ -11,9 +11,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Bondly" />
     <meta name="application-name" content="Bondly" />
-    <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="%BASE_URL%manifest.json" />
+    <link rel="apple-touch-icon" href="%BASE_URL%icons/icon-192.png" />
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;800&family=Manrope:wght@400;600;800&display=swap" rel="stylesheet" />
@@ -27,6 +27,11 @@
     </style>
   </head>
   <body>
+    <script>
+      // SPA redirect from 404.html
+      var r=sessionStorage.getItem('spa_redirect');
+      if(r){sessionStorage.removeItem('spa_redirect');history.replaceState(null,null,r||'/');}
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

@@ -3940,7 +3940,7 @@ function CoupleSetup({T,G,userId,onDone}){
   const [copied,setCopied]=useState(false);
 
   useEffect(()=>{
-    const m=window.location.pathname.match(/\/unisciti\/([A-Z0-9]{6})/i);
+    const m=(window.location.hash||window.location.pathname).match(/unisciti\/([A-Z0-9]{6})/i);
     if(m){setJoinCode(m[1].toUpperCase());setStep("join");}
   },[]);
 
@@ -3982,7 +3982,8 @@ function CoupleSetup({T,G,userId,onDone}){
   }
 
   function copyLink(){
-    const link=`${window.location.origin}/unisciti/${createdCode}`;
+    const base=`${window.location.origin}${import.meta.env.BASE_URL}`;
+    const link=`${base}#unisciti/${createdCode}`;
     navigator.clipboard.writeText(link).catch(()=>navigator.clipboard.writeText(createdCode));
     setCopied(true);setTimeout(()=>setCopied(false),2000);
   }
@@ -4020,7 +4021,7 @@ function CoupleSetup({T,G,userId,onDone}){
       </div>
       <div onClick={copyLink} style={{background:T.surface2,borderRadius:14,padding:"13px 16px",fontSize:13,color:T.sub,cursor:"pointer",marginBottom:8,border:`1px solid ${T.line2}`,wordBreak:"break-all"}}>
         <div style={{fontWeight:700,color:copied?T.a4:T.a2,marginBottom:4}}>{copied?"✓ Link copiato!":"📤 Tocca per copiare il link di invito"}</div>
-        <div style={{opacity:0.7}}>{window.location.origin}/unisciti/{createdCode}</div>
+        <div style={{opacity:0.7}}>{window.location.origin}{import.meta.env.BASE_URL}#unisciti/{createdCode}</div>
       </div>
     </div>
     <div style={{paddingBottom:40}}>

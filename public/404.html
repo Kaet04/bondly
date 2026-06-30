@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bondly</title>
+  <script>
+    // GitHub Pages SPA redirect: store full path and redirect to base
+    var path = window.location.pathname;
+    var base = '/bondly';
+    sessionStorage.setItem('spa_redirect', path.replace(base, '') + window.location.search + window.location.hash);
+    window.location.replace(base + '/');
+  </script>
+</head>
+<body></body>
+</html>
