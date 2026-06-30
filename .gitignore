@@ -1,0 +1,17 @@
+# dependencies
+node_modules
+
+# environment variables (never commit these)
+.env
+.env.local
+.env.*.local
+
+# build output
+dist
+
+# editor
+.vscode
+.idea
+
+# claude code
+.claude

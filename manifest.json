@@ -1,0 +1,18 @@
+{
+  "name": "Bondly — L'app per voi due",
+  "short_name": "Bondly",
+  "description": "Rafforza il tuo legame di coppia con giochi, sfide e momenti speciali.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#251B33",
+  "theme_color": "#251B33",
+  "lang": "it",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "screenshots": [],
+  "categories": ["lifestyle", "social"],
+  "prefer_related_applications": false
+}
