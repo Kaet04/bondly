@@ -103,6 +103,10 @@ const GAMES=[
   {id:"timecapsule",name:"Capsula del Tempo",emoji:"⏳",g:"a1",group:"future",mode:"both",play:"solo",ch:5,desc:"Una lettera da aprire tra un anno",time:"20 min",cp:100},
   // Intimità (18+)
   {id:"spicy",name:"Domande Piccanti",emoji:"🌶️",g:"a1",group:"intimacy",mode:"both",play:"async",ch:3,desc:"Per esplorare con complicità",time:"15 min",cp:70,adult:true},
+  // New Arcade
+  {id:"flappy",name:"Cuore Volante",emoji:"❤️",g:"a1",group:"arcade",mode:"both",play:"solo",ch:1,desc:"Fai volare il cuore tra gli ostacoli, batti il tuo record!",time:"3 min",cp:45},
+  {id:"memory_cards",name:"Carte Coppia",emoji:"🃏",g:"a2",group:"puzzle",mode:"both",play:"solo",ch:1,desc:"Trova tutte le coppie romantiche. Sfida la memoria!",time:"3 min",cp:45},
+  {id:"bubble",name:"Scoppia Bolle",emoji:"🫧",g:"a4",group:"arcade",mode:"both",play:"solo",ch:1,desc:"Scoppia più bolle che puoi in 30 secondi!",time:"1 min",cp:30},
 ];
 const GROUPS=[
   {id:"connect",name:"Quiz di Coppia",sub:"Conoscervi più a fondo",emoji:"💞",g:"a1"},
@@ -1107,6 +1111,9 @@ function Player({game,onBack,setCp,onToast,T,G,userId,coupleId,partnerName="il p
   if(game.id==="tap") return <TapGame game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
   if(game.id==="simon") return <SimonGame game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
   if(game.id==="intruso") return <TrovaIntruso game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
+  if(game.id==="flappy") return <FlappyHeart game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
+  if(game.id==="memory_cards") return <MemoryCards game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
+  if(game.id==="bubble") return <BubblePop game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
   if(game.id==="trivia"||game.id==="trivia2") return <Trivia game={game} onBack={onBack} setCp={setCp} onToast={onToast} T={T} G={G}/>;
 
   return(<div style={{padding:20,paddingBottom:90}}><Top/>
@@ -1232,6 +1239,27 @@ function DrawGame({game,onBack,setCp,onToast,T,G}){
   </div>);
 
   return null;
+}
+
+// ════════ CHALLENGE HELPERS ════════
+async function createChallenge(coupleId,userId,gameId,score,label){
+  try{await supabase.from("challenges").insert({couple_id:coupleId,from_user:userId,game_id:gameId,score,score_label:label,status:"pending"});}catch(e){}
+}
+async function completeChallenge(coupleId,gameId,score){
+  try{
+    const{data}=await supabase.from("challenges").select("id").eq("couple_id",coupleId).eq("game_id",gameId).eq("status","pending").single();
+    if(data)await supabase.from("challenges").update({partner_score:score,status:"done"}).eq("id",data.id);
+  }catch(e){}
+}
+
+// ════════ WIN PARTICLES ════════
+function WinParticles(){
+  return(<div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:999,overflow:"hidden"}}>
+    <style>{`@keyframes hfall{0%{transform:translateY(-20px) rotate(var(--rot)) scale(0.5);opacity:1}100%{transform:translateY(120vh) rotate(calc(var(--rot) + 720deg)) scale(1);opacity:0}}`}</style>
+    {Array.from({length:16}).map((_,i)=>(
+      <div key={i} style={{position:"absolute",left:`${5+i*6}%`,top:"-20px",fontSize:"min(6vw,28px)",animation:`hfall ${1.8+Math.random()*1.2}s ease-in ${i*0.12}s forwards`,"--rot":`${Math.floor(Math.random()*360)}deg`}}>❤️</div>
+    ))}
+  </div>);
 }
 
 // ════════ SLINGSHOT — fionda & bicchieri ════════
@@ -1368,26 +1396,114 @@ function Reflex({game,onBack,setCp,onToast,T,G}){
   </div>);
 }
 
-// ════════ PACMAN — mangia-frutta ════════
+// ════════ PACMAN — mangia-frutta (improved 9x9 with walls & ghost) ════════
+const PAC_MAZE=[
+  [0,1,0,0,0,1,0,0,0],
+  [0,1,0,1,0,1,0,1,0],
+  [0,0,0,1,0,0,0,1,0],
+  [0,1,0,0,0,1,0,0,0],
+  [0,1,1,1,0,1,1,1,0],
+  [0,0,0,1,0,0,0,0,0],
+  [0,1,0,1,0,1,1,1,0],
+  [0,1,0,0,0,0,0,1,0],
+  [0,0,0,1,0,1,0,0,0],
+];
 function Pacman({game,onBack,setCp,onToast,T,G}){
   const grad=G[game.g];
-  const N=7;
+  const N=9;
+  const FRUITS=["🍎","🍓","🍒","🍇","🍊","🍑","🍌","🍉","🫐","🍋","🍈","🍇"];
   const [phase,setPhase]=useState("intro");
-  const [pac,setPac]=useState({x:3,y:3});
+  const [pac,setPac]=useState({x:0,y:0});
   const [dir,setDir]=useState("right");
   const [fruits,setFruits]=useState([]);
   const [eaten,setEaten]=useState(0);
   const [time,setTime]=useState(0);
+  const [ghost,setGhost]=useState({x:8,y:8});
+  const [gameOver,setGameOver]=useState(false);
   const tickRef=useRef(null);
+  const ghostRef=useRef(null);
+  const timerRef=useRef(null);
   const touchRef=useRef(null);
-  const FRUITS=["🍎","🍓","🍒","🍇","🍊","🍑","🍌","🍉"];
+  const dirRef=useRef("right");
+
+  function isWall(x,y){if(x<0||x>=N||y<0||y>=N)return true;return PAC_MAZE[y][x]===1;}
 
   function seed(){
-    const cells=[];for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(!(x===3&&y===3))cells.push({x,y});
+    const cells=[];
+    for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+      if(!isWall(x,y)&&!(x===0&&y===0)&&!(x===8&&y===8))cells.push({x,y});
+    }
     cells.sort(()=>Math.random()-0.5);
-    setFruits(cells.slice(0,10).map((c,i)=>({...c,e:FRUITS[i%FRUITS.length],id:i})));
+    return cells.slice(0,12).map((c,i)=>({...c,e:FRUITS[i%FRUITS.length],id:i}));
   }
-  function start(){setPac({x:3,y:3});setDir("right");setEaten(0);setTime(0);seed();setPhase("play");}
+
+  function start(){
+    setPac({x:0,y:0});setDir("right");dirRef.current="right";
+    setEaten(0);setTime(0);setFruits(seed());
+    setGhost({x:8,y:8});setGameOver(false);setPhase("play");
+  }
+
+  // ghost random movement
+  useEffect(()=>{
+    if(phase!=="play"||gameOver)return;
+    ghostRef.current=setInterval(()=>{
+      setGhost(g=>{
+        const moves=[];
+        if(!isWall(g.x+1,g.y))moves.push({x:g.x+1,y:g.y});
+        if(!isWall(g.x-1,g.y))moves.push({x:g.x-1,y:g.y});
+        if(!isWall(g.x,g.y+1))moves.push({x:g.x,y:g.y+1});
+        if(!isWall(g.x,g.y-1))moves.push({x:g.x,y:g.y-1});
+        if(moves.length===0)return g;
+        return moves[Math.floor(Math.random()*moves.length)];
+      });
+    },600);
+    return()=>clearInterval(ghostRef.current);
+  },[phase,gameOver]);
+
+  // pacman movement
+  useEffect(()=>{
+    if(phase!=="play"||gameOver)return;
+    tickRef.current=setInterval(()=>{
+      setPac(p=>{
+        const d=dirRef.current;
+        let nx=p.x,ny=p.y;
+        if(d==="right")nx=p.x+1;
+        if(d==="left")nx=p.x-1;
+        if(d==="up")ny=p.y-1;
+        if(d==="down")ny=p.y+1;
+        if(isWall(nx,ny))return p;
+        return{x:nx,y:ny};
+      });
+    },220);
+    return()=>clearInterval(tickRef.current);
+  },[phase,gameOver]);
+
+  // timer
+  useEffect(()=>{
+    if(phase!=="play"||gameOver)return;
+    timerRef.current=setInterval(()=>setTime(v=>v+0.1),100);
+    return()=>clearInterval(timerRef.current);
+  },[phase,gameOver]);
+
+  // eat fruit + ghost collision
+  useEffect(()=>{
+    if(phase!=="play"||gameOver)return;
+    // ghost collision
+    if(ghost.x===pac.x&&ghost.y===pac.y){
+      clearInterval(tickRef.current);clearInterval(ghostRef.current);clearInterval(timerRef.current);
+      setGameOver(true);setPhase("over");onToast("👻 Il fantasma ti ha preso!");return;
+    }
+    setFruits(fs=>{
+      const hit=fs.find(f=>f.x===pac.x&&f.y===pac.y);
+      if(hit){
+        const left=fs.filter(f=>f.id!==hit.id);
+        setEaten(e=>e+1);
+        if(left.length===0){clearInterval(tickRef.current);clearInterval(ghostRef.current);clearInterval(timerRef.current);setCp(p=>p+game.cp);setPhase("done");}
+        return left;
+      }
+      return fs;
+    });
+  },[pac,ghost,phase,gameOver]);
 
   function onSwipeStart(e){const t=e.touches[0];touchRef.current={x:t.clientX,y:t.clientY};}
   function onSwipeEnd(e){
@@ -1396,39 +1512,10 @@ function Pacman({game,onBack,setCp,onToast,T,G}){
     const dx=t.clientX-touchRef.current.x,dy=t.clientY-touchRef.current.y;
     touchRef.current=null;
     if(Math.abs(dx)<20&&Math.abs(dy)<20)return;
-    if(Math.abs(dx)>Math.abs(dy)){setDir(dx>0?"right":"left");}else{setDir(dy>0?"down":"up");}
+    const nd=Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up");
+    setDir(nd);dirRef.current=nd;
   }
-
-  // auto-move pacman at 280ms per step
-  useEffect(()=>{
-    if(phase!=="play")return;
-    tickRef.current=setInterval(()=>{
-      setPac(p=>{
-        let nx=p.x,ny=p.y;
-        if(dir==="right")nx=Math.min(N-1,p.x+1);
-        if(dir==="left")nx=Math.max(0,p.x-1);
-        if(dir==="up")ny=Math.max(0,p.y-1);
-        if(dir==="down")ny=Math.min(N-1,p.y+1);
-        return{x:nx,y:ny};
-      });
-    },280);
-    return()=>clearInterval(tickRef.current);
-  },[phase,dir]);
-
-  // timer
-  useEffect(()=>{if(phase!=="play")return;const t=setInterval(()=>setTime(v=>v+0.1),100);return()=>clearInterval(t);},[phase]);
-
-  // eat fruit on overlap
-  useEffect(()=>{
-    if(phase!=="play")return;
-    setFruits(fs=>{
-      const hit=fs.find(f=>f.x===pac.x&&f.y===pac.y);
-      if(hit){const left=fs.filter(f=>f.id!==hit.id);setEaten(e=>e+1);
-        if(left.length===0){setPhase("done");setCp(p=>p+game.cp);}
-        return left;}
-      return fs;
-    });
-  },[pac,phase]);
+  function setDirFn(d){setDir(d);dirRef.current=d;}
 
   const rot={right:0,down:90,left:180,up:270}[dir];
 
@@ -1437,17 +1524,28 @@ function Pacman({game,onBack,setCp,onToast,T,G}){
     <div style={{textAlign:"center",padding:"36px 0"}}>
       <div style={{fontSize:60,marginBottom:18}}>🟡</div>
       <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Mangia-Frutta</div>
-      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Guida la palla con le frecce e mangia tutta la frutta più in fretta che puoi. Poi passa il telefono: <b style={{color:T.text}}>il più veloce della coppia vince!</b></div>
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Guida la palla nel labirinto e mangia 12 frutti! Attento al fantasma 👻 che ti insegue. <b style={{color:T.text}}>Il più veloce della coppia vince!</b></div>
     </div>
     <Btn T={T} grad={grad} onClick={start}>Inizia a mangiare 🍎</Btn>
   </div>);
 
   if(phase==="done")return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
+    <WinParticles/>
     <div style={{fontSize:60,marginBottom:16}}>🏆</div>
     <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Tutto mangiato!</div>
     <div style={{fontSize:40,fontWeight:800,color:T.a3,marginBottom:4}}>{time.toFixed(1)}s</div>
-    <div style={{fontSize:14,color:T.sub,marginBottom:8}}>il vostro tempo</div>
+    <div style={{fontSize:14,color:T.sub,marginBottom:8}}>il tuo tempo</div>
     <div style={{fontSize:13,color:T.faint,marginBottom:30}}>+{game.cp} punti · ora tocca al partner battere il tempo! 😏</div>
+    <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn>
+    <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
+  </div>);
+
+  if(phase==="over")return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
+    <div style={{fontSize:60,marginBottom:16}}>👻</div>
+    <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Preso dal fantasma!</div>
+    <div style={{fontSize:40,fontWeight:800,color:T.a3,marginBottom:4}}>{eaten}/12</div>
+    <div style={{fontSize:14,color:T.sub,marginBottom:8}}>frutti mangiati</div>
+    <div style={{fontSize:13,color:T.faint,marginBottom:30}}>Riprova!</div>
     <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn>
     <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
   </div>);
@@ -1455,76 +1553,136 @@ function Pacman({game,onBack,setCp,onToast,T,G}){
   return(<div style={{padding:20,paddingBottom:90}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
       <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
-      <div style={{display:"flex",gap:14}}><span style={{fontSize:14,fontWeight:800,color:T.a3}}>🍎 {eaten}/10</span><span style={{fontSize:14,fontWeight:800}}>⏱ {time.toFixed(1)}s</span></div>
+      <div style={{display:"flex",gap:14}}><span style={{fontSize:14,fontWeight:800,color:T.a3}}>🍎 {eaten}/12</span><span style={{fontSize:14,fontWeight:800}}>⏱ {time.toFixed(1)}s</span></div>
     </div>
-    {/* grid with swipe */}
-    <div onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd} style={{background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",borderRadius:18,border:`1px solid ${T.line2}`,padding:8,aspectRatio:"1",display:"grid",gridTemplateColumns:`repeat(${N},1fr)`,gridTemplateRows:`repeat(${N},1fr)`,gap:2,touchAction:"none"}}>
-      {Array.from({length:N*N}).map((_,i)=>{const x=i%N,y=Math.floor(i/N);const f=fruits.find(ff=>ff.x===x&&ff.y===y);const isPac=pac.x===x&&pac.y===y;
-        return(<div key={i} style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:"min(5vw,22px)",borderRadius:6,background:isPac?`${T.a3}22`:"transparent"}}>
-          {isPac?<span style={{transform:`rotate(${rot}deg)`,transition:"transform 0.15s"}}>🟡</span>:f?f.e:""}
-        </div>);})}
+    <div onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
+      style={{background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",borderRadius:18,border:`1px solid ${T.line2}`,padding:6,aspectRatio:"1",display:"grid",gridTemplateColumns:`repeat(${N},1fr)`,gridTemplateRows:`repeat(${N},1fr)`,gap:2,touchAction:"none"}}>
+      {Array.from({length:N*N}).map((_,i)=>{
+        const x=i%N,y=Math.floor(i/N);
+        const wall=PAC_MAZE[y][x]===1;
+        const f=fruits.find(ff=>ff.x===x&&ff.y===y);
+        const isPac=pac.x===x&&pac.y===y;
+        const isGhost=ghost.x===x&&ghost.y===y;
+        return(<div key={i} style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:"min(4.5vw,18px)",borderRadius:4,background:wall?`${T.a2}55`:isPac?`${T.a3}22`:"transparent",border:wall?`1px solid ${T.a2}44`:"none"}}>
+          {isPac?<span style={{transform:`rotate(${rot}deg)`,transition:"transform 0.15s"}}>🟡</span>:isGhost?"👻":f?f.e:wall?"":null}
+        </div>);
+      })}
     </div>
-    {/* D-pad */}
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginTop:18,gap:8}}>
-      <DBtn T={T} grad={grad} on={()=>setDir("up")}>▲</DBtn>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginTop:16,gap:8}}>
+      <DBtn T={T} grad={grad} on={()=>setDirFn("up")}>▲</DBtn>
       <div style={{display:"flex",gap:48}}>
-        <DBtn T={T} grad={grad} on={()=>setDir("left")}>◀</DBtn>
-        <DBtn T={T} grad={grad} on={()=>setDir("down")}>▼</DBtn>
-        <DBtn T={T} grad={grad} on={()=>setDir("right")}>▶</DBtn>
+        <DBtn T={T} grad={grad} on={()=>setDirFn("left")}>◀</DBtn>
+        <DBtn T={T} grad={grad} on={()=>setDirFn("down")}>▼</DBtn>
+        <DBtn T={T} grad={grad} on={()=>setDirFn("right")}>▶</DBtn>
       </div>
     </div>
-    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:12}}>Frecce o swipe sul campo per cambiare direzione 👆</div>
+    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:10}}>Frecce o swipe · evita il 👻!</div>
   </div>);
 }
 function DBtn({children,on,T,grad}){
   return <button onClick={on} style={{width:56,height:56,borderRadius:16,background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",border:`1px solid ${T.line2}`,fontSize:20,fontWeight:800,color:T.text,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>{children}</button>;
 }
 
-// ════════ CATCH — cuori in caduta ════════
+// ════════ CATCH — cuori in caduta (improved) ════════
 function CatchGame({game,onBack,setCp,onToast,T,G}){
   const grad=G[game.g];
   const [phase,setPhase]=useState("intro");
   const [items,setItems]=useState([]);
   const [bx,setBx]=useState(50);
   const [score,setScore]=useState(0);
-  const [time,setTime]=useState(30);
+  const [lives,setLives]=useState(3);
+  const [time,setTime]=useState(60);
+  const livesRef=useRef(3);
   const areaRef=useRef(null);
 
-  useEffect(()=>{if(phase!=="play")return;if(time<=0){setPhase("done");if(score>0)setCp(p=>p+game.cp);return;}const t=setTimeout(()=>setTime(v=>v-1),1000);return()=>clearTimeout(t);},[phase,time]);
-  useEffect(()=>{if(phase!=="play")return;const sp=setInterval(()=>{setItems(it=>[...it,{id:Math.random(),x:8+Math.random()*84,y:0,bad:Math.random()<0.22,e:Math.random()<0.22?"💣":["💝","💖","💕","💗"][Math.floor(Math.random()*4)]}]);},700);return()=>clearInterval(sp);},[phase]);
-  useEffect(()=>{if(phase!=="play")return;const mv=setInterval(()=>{
-    setItems(it=>it.map(o=>({...o,y:o.y+4})).filter(o=>{
-      if(o.y>=86&&o.y<=98&&Math.abs(o.x-bx)<14){if(o.bad){setScore(s=>Math.max(0,s-2));}else setScore(s=>s+1);return false;}
-      return o.y<100;
-    }));
-  },60);return()=>clearInterval(mv);},[phase,bx]);
+  // timer
+  useEffect(()=>{
+    if(phase!=="play")return;
+    if(time<=0){setPhase("done");if(score>0)setCp(p=>p+game.cp);return;}
+    const t=setTimeout(()=>setTime(v=>v-1),1000);return()=>clearTimeout(t);
+  },[phase,time]);
 
-  function move(e){const r=areaRef.current.getBoundingClientRect();const t=e.touches?e.touches[0]:e;setBx(Math.max(8,Math.min(92,((t.clientX-r.left)/r.width)*100)));}
-  function start(){setScore(0);setTime(30);setItems([]);setBx(50);setPhase("play");}
+  // spawn items — speed increases with time elapsed
+  useEffect(()=>{
+    if(phase!=="play")return;
+    const elapsed=60-time;
+    const spawnMs=Math.max(800,1800-elapsed*16);
+    const sp=setInterval(()=>{
+      const isBomb=Math.random()<0.2;
+      setItems(it=>[...it,{id:Math.random(),x:6+Math.random()*88,y:0,isBomb,e:isBomb?"💣":["💝","💖","💕","💗"][Math.floor(Math.random()*4)]}]);
+    },spawnMs);
+    return()=>clearInterval(sp);
+  },[phase,time]);
+
+  // move items
+  useEffect(()=>{
+    if(phase!=="play")return;
+    const mv=setInterval(()=>{
+      setItems(it=>it.map(o=>({...o,y:o.y+3.5})).filter(o=>{
+        if(o.y>=85&&o.y<=99&&Math.abs(o.x-bx)<18){
+          if(o.isBomb){
+            const nl=livesRef.current-1;
+            livesRef.current=nl;
+            setLives(nl);
+            onToast("💣 -1 vita!");
+            if(nl<=0){setPhase("done");if(score>0)setCp(p=>p+game.cp);}
+          } else {
+            setScore(s=>s+1);
+          }
+          return false;
+        }
+        return o.y<102;
+      }));
+    },50);return()=>clearInterval(mv);
+  },[phase,bx,score]);
+
+  function move(e){
+    if(!areaRef.current)return;
+    const r=areaRef.current.getBoundingClientRect();
+    const t=e.touches?e.touches[0]:e;
+    setBx(Math.max(8,Math.min(92,((t.clientX-r.left)/r.width)*100)));
+  }
+  function start(){
+    setScore(0);setTime(60);setItems([]);setBx(50);
+    livesRef.current=3;setLives(3);setPhase("play");
+  }
 
   if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
-    <div style={{textAlign:"center",padding:"36px 0"}}><div style={{fontSize:60,marginBottom:18}}>💝</div><div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Cuori in Caduta</div><div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Muovi il cestino e prendi i cuori che cadono. Attento alle bombe 💣! Sfidate il punteggio più alto.</div></div>
-    <Btn T={T} grad={grad} onClick={start}>Inizia · 30s</Btn>
+    <div style={{textAlign:"center",padding:"36px 0"}}>
+      <div style={{fontSize:60,marginBottom:18}}>💝</div>
+      <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Cuori in Caduta</div>
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Muovi il cestino e prendi i cuori che cadono. Hai 3 vite — le bombe 💣 le tolgono! I cuori cadono sempre più veloci. <b style={{color:T.text}}>Sfidate il punteggio più alto!</b></div>
+    </div>
+    <Btn T={T} grad={grad} onClick={start}>Inizia · 60s</Btn>
   </div>);
 
   if(phase==="done")return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
-    <div style={{fontSize:60,marginBottom:16}}>💖</div><div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Tempo scaduto!</div>
-    <div style={{fontSize:40,fontWeight:800,color:T.a1,marginBottom:6}}>{score}</div><div style={{fontSize:14,color:T.sub,marginBottom:8}}>cuori presi</div>
+    {score>8&&<WinParticles/>}
+    <div style={{fontSize:60,marginBottom:16}}>💖</div>
+    <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>{lives<=0?"Vite esaurite!":"Tempo scaduto!"}</div>
+    <div style={{fontSize:40,fontWeight:800,color:T.a1,marginBottom:6}}>{score}</div>
+    <div style={{fontSize:14,color:T.sub,marginBottom:8}}>cuori presi</div>
     <div style={{fontSize:13,color:T.faint,marginBottom:30}}>{score>0?`+${game.cp} punti! Tocca al partner 😏`:"Riprovate!"}</div>
-    <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn><Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
+    <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn>
+    <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
   </div>);
 
   return(<div style={{padding:20,paddingBottom:90}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
       <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
-      <div style={{display:"flex",gap:14}}><span style={{fontSize:14,fontWeight:800,color:T.a1}}>💝 {score}</span><span style={{fontSize:14,fontWeight:800,color:time<=5?T.a1:T.text}}>⏱ {time}s</span></div>
+      <div style={{display:"flex",gap:12,alignItems:"center"}}>
+        <span style={{fontSize:14,fontWeight:800,color:T.a1}}>💝 {score}</span>
+        <span style={{fontSize:14}}>{Array.from({length:lives}).map((_,i)=>"❤️").join("")}{Array.from({length:3-lives}).map((_,i)=>"🖤").join("")}</span>
+        <span style={{fontSize:14,fontWeight:800,color:time<=10?T.a1:T.text}}>⏱ {time}s</span>
+      </div>
     </div>
-    <div ref={areaRef} onMouseMove={move} onTouchMove={move} style={{position:"relative",background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",borderRadius:18,border:`1px solid ${T.line2}`,height:380,overflow:"hidden",touchAction:"none",cursor:"pointer"}}>
-      {items.map(o=>(<div key={o.id} style={{position:"absolute",left:`${o.x}%`,top:`${o.y}%`,fontSize:26,transform:"translate(-50%,-50%)"}}>{o.e}</div>))}
-      <div style={{position:"absolute",left:`${bx}%`,bottom:6,fontSize:34,transform:"translateX(-50%)"}}>🧺</div>
+    <div ref={areaRef} onMouseMove={move} onTouchMove={move}
+      style={{position:"relative",background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",borderRadius:18,border:`1px solid ${T.line2}`,height:380,overflow:"hidden",touchAction:"none",cursor:"pointer"}}>
+      {items.map(o=>(<div key={o.id} style={{position:"absolute",left:`${o.x}%`,top:`${o.y}%`,fontSize:28,transform:"translate(-50%,-50%)"}}>{o.e}</div>))}
+      <div style={{position:"absolute",left:`${bx}%`,bottom:4,fontSize:40,transform:"translateX(-50%)",filter:`drop-shadow(0 2px 6px ${T.a1}88)`}}>🧺</div>
     </div>
-    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:10}}>Muovi il dito per spostare il cestino</div>
+    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:10}}>Muovi il dito · evita le 💣 · 3 vite</div>
   </div>);
 }
 
@@ -1568,21 +1726,24 @@ function TapGame({game,onBack,setCp,onToast,T,G}){
   </div>);
 }
 
-// ════════ STACK — torre dei sogni ════════
+// ════════ STACK — torre dei sogni (improved) ════════
 function Stack({game,onBack,setCp,onToast,T,G}){
   const grad=G[game.g];
-  const [phase,setPhase]=useState("intro"); // intro|play|over
-  const [blocks,setBlocks]=useState([]); // placed blocks {x,w}
+  const [phase,setPhase]=useState("intro");
+  const [blocks,setBlocks]=useState([]);
   const [cur,setCur]=useState({x:0,w:60,dir:1});
   const [score,setScore]=useState(0);
-  const reqRef=useRef(null);
+  const [combo,setCombo]=useState(0);
+  const [flash,setFlash]=useState(null);
+  const [best]=useState(()=>parseInt(localStorage.getItem("bly_stack_best")||"0"));
   const BW=200;
+  const TIER_GRADS=[G.a1,G.a2,G.a3,G.a4,G.a5];
 
-  function start(){setBlocks([{x:70,w:60}]);setCur({x:0,w:60,dir:1});setScore(0);setPhase("play");}
-  // animate moving block — speed scales with score
+  function start(){setBlocks([{x:70,w:60}]);setCur({x:0,w:60,dir:1});setScore(0);setCombo(0);setFlash(null);setPhase("play");}
+
   useEffect(()=>{
     if(phase!=="play")return;
-    const speed=2.2+score*0.15;
+    const speed=Math.min(6.0,2.2+score*0.15);
     let raf;
     const step=()=>{
       setCur(c=>{
@@ -1602,29 +1763,48 @@ function Stack({game,onBack,setCp,onToast,T,G}){
     const overlapL=Math.max(cur.x,top.x);
     const overlapR=Math.min(cur.x+cur.w,top.x+top.w);
     const w=overlapR-overlapL;
-    if(w<=0){setPhase("over");if(score>0)setCp(p=>p+game.cp);return;}
-    const nb={x:overlapL,w};
-    const nblocks=[...blocks,nb];
-    setBlocks(nblocks);setScore(s=>s+1);
-    // next moving block same width, start from left/right
-    setCur({x:0,w,dir:1});
+    if(w<=0){
+      const sc=score;
+      const stored=parseInt(localStorage.getItem("bly_stack_best")||"0");
+      if(sc>stored)localStorage.setItem("bly_stack_best",String(sc));
+      setPhase("over");if(score>0)setCp(p=>p+game.cp);return;
+    }
+    const isPerfect=w/cur.w>0.95;
+    const nb={x:overlapL,w:isPerfect?cur.w:w};
+    setBlocks(prev=>[...prev,nb]);
+    const newCombo=isPerfect?combo+1:0;
+    setCombo(newCombo);
+    let pts=1;
+    if(isPerfect){pts+=2;}
+    if(newCombo>=3){pts+=newCombo-2;setFlash(`COMBO x${newCombo}! +${pts}`);}
+    else if(isPerfect){setFlash("PERFETTO! +3");}
+    else{setFlash(null);}
+    if(flash)setTimeout(()=>setFlash(null),1000);
+    setScore(s=>s+pts);
+    setCur({x:0,w:isPerfect?cur.w:w,dir:1});
   }
+
+  const currentBest=Math.max(best,score);
 
   if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
     <div style={{textAlign:"center",padding:"36px 0"}}>
       <div style={{fontSize:60,marginBottom:18}}>🗼</div>
       <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Torre dei Sogni</div>
-      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Tocca per posare ogni blocco sopra il precedente. Più sei preciso, più la torre sale. <b style={{color:T.text}}>Chi la costruisce più alta vince!</b></div>
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Tocca per posare ogni blocco. Drop perfetto (+3)! 3 consecutivi = COMBO! <b style={{color:T.text}}>Chi la costruisce più alta vince!</b></div>
+      {best>0&&<div style={{marginTop:16,fontSize:13,color:T.a5,fontWeight:700}}>🏆 Record: {best} piani</div>}
     </div>
     <Btn T={T} grad={grad} onClick={start}>Costruisci 🗼</Btn>
   </div>);
 
   if(phase==="over")return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
+    {score>best&&<WinParticles/>}
     <div style={{fontSize:60,marginBottom:16}}>🏆</div>
     <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Torre crollata!</div>
     <div style={{fontSize:42,fontWeight:800,color:T.a5,marginBottom:4}}>{score}</div>
     <div style={{fontSize:14,color:T.sub,marginBottom:8}}>piani costruiti</div>
+    {score>best&&<div style={{fontSize:15,fontWeight:800,color:T.a1,marginBottom:8}}>🏆 NUOVO RECORD!</div>}
+    <div style={{fontSize:13,color:T.faint,marginBottom:4}}>Best: {currentBest} piani</div>
     <div style={{fontSize:13,color:T.faint,marginBottom:30}}>{score>0?`+${game.cp} punti · ora tocca al partner battervi! 😏`:"Riprovate!"}</div>
     <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn>
     <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
@@ -1634,14 +1814,16 @@ function Stack({game,onBack,setCp,onToast,T,G}){
   return(<div onMouseDown={drop} onTouchStart={e=>{e.preventDefault();drop();}} style={{padding:20,paddingBottom:90,minHeight:"70vh",cursor:"pointer",userSelect:"none"}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
       <span onClick={e=>{e.stopPropagation();onBack();}} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
-      <span style={{fontSize:18,fontWeight:800,color:T.a5}}>🗼 {score}</span>
+      <div style={{display:"flex",gap:10,alignItems:"center"}}>
+        {combo>=3&&<span style={{fontSize:12,fontWeight:800,color:T.a1,background:`${T.a1}22`,borderRadius:8,padding:"2px 7px"}}>COMBO x{combo}</span>}
+        <span style={{fontSize:18,fontWeight:800,color:T.a5}}>🗼 {score}</span>
+      </div>
     </div>
+    {flash&&<div style={{textAlign:"center",fontSize:18,fontWeight:900,color:T.a1,marginBottom:8,animation:"none"}}>{flash}</div>}
     <div style={{position:"relative",height:420,background:`linear-gradient(180deg,${T.a4}0A,${T.a1}06)`,borderRadius:20,border:`1px solid ${T.line}`,overflow:"hidden"}}>
-      {/* moving block */}
-      <div style={{position:"absolute",left:`${(cur.x/BW)*100}%`,top:20,width:`${(cur.w/BW)*100}%`,height:26,background:grad,borderRadius:6,boxShadow:`0 4px 12px ${T.a4}44`}}/>
-      {/* placed blocks stacked from bottom */}
+      <div style={{position:"absolute",left:`${(cur.x/BW)*100}%`,top:20,width:`${(cur.w/BW)*100}%`,height:26,background:TIER_GRADS[score%5],borderRadius:6,boxShadow:`0 0 18px ${T.a1}88, 0 4px 12px ${T.a4}44`}}/>
       {visible.map((b,i)=>(
-        <div key={i} style={{position:"absolute",left:`${(b.x/BW)*100}%`,bottom:i*30,width:`${(b.w/BW)*100}%`,height:28,background:i%2?G.a1:G.a4,borderRadius:6,border:`1px solid rgba(255,255,255,0.2)`}}/>
+        <div key={i} style={{position:"absolute",left:`${(b.x/BW)*100}%`,bottom:i*30,width:`${(b.w/BW)*100}%`,height:28,background:TIER_GRADS[(score-visible.length+i+5)%5],borderRadius:6,border:`1px solid rgba(255,255,255,0.2)`,boxShadow:`0 2px 6px rgba(0,0,0,0.15)`}}/>
       ))}
       <div style={{position:"absolute",bottom:8,left:0,right:0,textAlign:"center",fontSize:13,fontWeight:700,color:T.faint}}>Tocca per posare 👆</div>
     </div>
@@ -2006,39 +2188,392 @@ function TrovaIntruso({game,onBack,setCp,onToast,T,G}){
   </div>);
 }
 
-// ════════ SNAKE — snake romantico ════════
-function Snake({game,onBack,setCp,onToast,T,G}){
+// ════════ FLAPPY HEART ════════
+function FlappyHeart({game,onBack,setCp,onToast,T,G}){
   const grad=G[game.g];
-  const N=13;
+  const FIELD_H=300,FIELD_W=320,GAP=90,PIPE_W=36;
   const [phase,setPhase]=useState("intro");
-  const [snake,setSnake]=useState([{x:6,y:6}]);
-  const [dir,setDir]=useState({x:1,y:0});
-  const [food,setFood]=useState({x:9,y:6});
-  const [score,setScore]=useState(0);
-  const dirRef=useRef(dir);dirRef.current=dir;
-  const snakeRef=useRef(snake);snakeRef.current=snake;
-  const swipeRef=useRef(null);
+  const [renderTick,setRenderTick]=useState(0);
+  const [best]=useState(()=>parseInt(localStorage.getItem("bly_flappy_best")||"0"));
+  const stateRef=useRef({bird:{y:150,vy:0},pipes:[],score:0,frame:0,alive:true,jumpPending:false});
+  const rafRef=useRef(null);
+  const scoreDisp=useRef(0);
+  const [displayScore,setDisplayScore]=useState(0);
+  const [isNewBest,setIsNewBest]=useState(false);
+  const finalScore=useRef(0);
 
-  function placeFood(sn){let f;do{f={x:Math.floor(Math.random()*N),y:Math.floor(Math.random()*N)};}while(sn.some(s=>s.x===f.x&&s.y===f.y));return f;}
-  function start(){const s=[{x:6,y:6}];setSnake(s);setDir({x:1,y:0});setFood(placeFood(s));setScore(0);setPhase("play");}
+  function spawnPipe(frameX){
+    const gapTop=30+Math.random()*(FIELD_H-GAP-30);
+    return{x:FIELD_W,gapTop,passed:false};
+  }
+
+  function startGame(){
+    const s=stateRef.current;
+    s.bird={y:150,vy:0};s.pipes=[];s.score=0;s.frame=0;s.alive=true;s.jumpPending=false;
+    scoreDisp.current=0;setDisplayScore(0);setIsNewBest(false);
+    setPhase("play");
+    rafRef.current=requestAnimationFrame(loop);
+  }
+
+  function loop(){
+    const s=stateRef.current;
+    if(!s.alive)return;
+    s.frame++;
+    // gravity
+    s.bird.vy+=0.35;
+    if(s.jumpPending){s.bird.vy=-6;s.jumpPending=false;}
+    s.bird.y+=s.bird.vy;
+    // pipes
+    s.pipes=s.pipes.map(p=>({...p,x:p.x-2.5})).filter(p=>p.x>-PIPE_W);
+    if(s.frame%90===0)s.pipes.push(spawnPipe());
+    // score
+    s.pipes.forEach(p=>{
+      if(!p.passed&&p.x+PIPE_W<40){p.passed=true;s.score++;scoreDisp.current=s.score;setDisplayScore(s.score);}
+    });
+    // collision: ceiling/floor
+    if(s.bird.y<0||s.bird.y>FIELD_H-16){s.alive=false;endGame();return;}
+    // pipe collision (bird at x=40, radius 12)
+    for(const p of s.pipes){
+      if(p.x<76&&p.x+PIPE_W>28){
+        if(s.bird.y<p.gapTop||s.bird.y+16>p.gapTop+GAP){s.alive=false;endGame();return;}
+      }
+    }
+    if(s.frame%3===0)setRenderTick(v=>v+1);
+    rafRef.current=requestAnimationFrame(loop);
+  }
+
+  function endGame(){
+    cancelAnimationFrame(rafRef.current);
+    const sc=stateRef.current.score;
+    finalScore.current=sc;
+    const stored=parseInt(localStorage.getItem("bly_flappy_best")||"0");
+    if(sc>stored){localStorage.setItem("bly_flappy_best",String(sc));setIsNewBest(true);}
+    if(sc>0)setCp(p=>p+game.cp);
+    setPhase("over");
+  }
+
+  function jump(){
+    if(phase==="play")stateRef.current.jumpPending=true;
+    else if(phase==="intro")startGame();
+  }
+
+  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);},[]);
+
+  const s=stateRef.current;
+  const tilt=phase==="play"?Math.max(-30,Math.min(30,s.bird.vy*3)):0;
+
+  if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
+    <div style={{textAlign:"center",padding:"36px 0"}}>
+      <div style={{fontSize:60,marginBottom:18}}>❤️</div>
+      <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Cuore Volante</div>
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Tocca per far volare il cuore tra i tubi! Attento a non cadere. <b style={{color:T.text}}>Batti il record della coppia!</b></div>
+      {best>0&&<div style={{marginTop:16,fontSize:13,color:T.a1,fontWeight:700}}>🏆 Record: {best} tubi</div>}
+    </div>
+    <Btn T={T} grad={grad} onClick={startGame}>Vola! ❤️</Btn>
+  </div>);
+
+  if(phase==="over"){
+    const stored=parseInt(localStorage.getItem("bly_flappy_best")||"0");
+    return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
+      {isNewBest&&<WinParticles/>}
+      <div style={{fontSize:60,marginBottom:16}}>❤️</div>
+      <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Atterrato!</div>
+      <div style={{fontSize:42,fontWeight:800,color:T.a1,marginBottom:4}}>{finalScore.current}</div>
+      <div style={{fontSize:14,color:T.sub,marginBottom:8}}>tubi superati</div>
+      {isNewBest&&<div style={{fontSize:15,fontWeight:800,color:T.a1,marginBottom:8}}>🏆 NUOVO RECORD!</div>}
+      <div style={{fontSize:13,color:T.faint,marginBottom:4}}>Best: {stored}</div>
+      <div style={{fontSize:13,color:T.faint,marginBottom:30}}>{finalScore.current>0?`+${game.cp} punti · ora tocca al partner! 😏`:"Riprova!"}</div>
+      <Btn T={T} grad={grad} onClick={startGame}>Rigioca</Btn>
+      <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
+    </div>);
+  }
+
+  return(<div style={{padding:20,paddingBottom:90}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
+      <span style={{fontSize:16,fontWeight:800,color:T.a1}}>❤️ {displayScore}</span>
+    </div>
+    <div onClick={jump} onTouchStart={e=>{e.preventDefault();jump();}}
+      style={{position:"relative",width:FIELD_W,maxWidth:"100%",height:FIELD_H,margin:"0 auto",background:`linear-gradient(180deg,${T.a4}22,${T.surface})`,borderRadius:18,border:`1px solid ${T.line2}`,overflow:"hidden",cursor:"pointer",touchAction:"none",userSelect:"none"}}>
+      {/* pipes */}
+      {s.pipes.map((p,i)=>(
+        <div key={i}>
+          <div style={{position:"absolute",left:p.x,top:0,width:PIPE_W,height:p.gapTop,background:`linear-gradient(180deg,${T.a1},${T.a2})`,borderRadius:"0 0 8px 8px",boxShadow:`2px 0 8px ${T.a1}44`}}/>
+          <div style={{position:"absolute",left:p.x,top:p.gapTop+GAP,width:PIPE_W,height:FIELD_H-(p.gapTop+GAP),background:`linear-gradient(0deg,${T.a1},${T.a2})`,borderRadius:"8px 8px 0 0",boxShadow:`2px 0 8px ${T.a1}44`}}/>
+        </div>
+      ))}
+      {/* bird */}
+      <div style={{position:"absolute",left:40,top:s.bird.y,fontSize:22,transform:`rotate(${tilt}deg)`,transition:"transform 0.05s",userSelect:"none"}}>❤️</div>
+      <div style={{position:"absolute",top:10,left:0,right:0,textAlign:"center",fontSize:20,fontWeight:900,color:T.text,opacity:0.7}}>{displayScore}</div>
+      <div style={{position:"absolute",bottom:10,left:0,right:0,textAlign:"center",fontSize:12,color:T.faint}}>Tocca per saltare 👆</div>
+    </div>
+  </div>);
+}
+
+// ════════ MEMORY CARDS ════════
+function MemoryCards({game,onBack,setCp,onToast,T,G}){
+  const grad=G[game.g];
+  const EMOJIS=["🌹","💍","💌","🕯️","🍷","🎁","💫","🌙"];
+  const [phase,setPhase]=useState("intro");
+  const [cards,setCards]=useState([]);
+  const [firstPick,setFirstPick]=useState(null);
+  const [secondPick,setSecondPick]=useState(null);
+  const [matches,setMatches]=useState(0);
+  const [mistakes,setMistakes]=useState(0);
+  const [timer,setTimer]=useState(0);
+  const [locked,setLocked]=useState(false);
+  const [best]=useState(()=>parseInt(localStorage.getItem("bly_memory_best")||"9999"));
+
+  function shuffle(){
+    const deck=[...EMOJIS,...EMOJIS].map((e,i)=>({id:i,emoji:e,flipped:false,matched:false}));
+    for(let i=deck.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[deck[i],deck[j]]=[deck[j],deck[i]];}
+    return deck;
+  }
+  function start(){setCards(shuffle());setFirstPick(null);setSecondPick(null);setMatches(0);setMistakes(0);setTimer(0);setLocked(false);setPhase("play");}
 
   useEffect(()=>{
     if(phase!=="play")return;
+    const t=setInterval(()=>setTimer(v=>v+1),1000);
+    return()=>clearInterval(t);
+  },[phase]);
+
+  function flip(idx){
+    if(locked||cards[idx].flipped||cards[idx].matched)return;
+    const nc=cards.map((c,i)=>i===idx?{...c,flipped:true}:c);
+    setCards(nc);
+    if(firstPick===null){setFirstPick(idx);return;}
+    setSecondPick(idx);setLocked(true);
+    const a=nc[firstPick],b=nc[idx];
+    if(a.emoji===b.emoji){
+      const matched=nc.map((c,i)=>(i===firstPick||i===idx)?{...c,matched:true}:c);
+      setCards(matched);
+      const nm=matches+1;setMatches(nm);
+      setFirstPick(null);setSecondPick(null);setLocked(false);
+      if(nm===8){
+        const sc=Math.max(50,200-timer)+(8-mistakes)*10;
+        const stored=parseInt(localStorage.getItem("bly_memory_best")||"9999");
+        if(timer<stored)localStorage.setItem("bly_memory_best",String(timer));
+        setCp(p=>p+game.cp);setPhase("done");
+      }
+    } else {
+      setMistakes(m=>m+1);
+      setTimeout(()=>{
+        setCards(prev=>prev.map((c,i)=>(i===firstPick||i===idx)?{...c,flipped:false}:c));
+        setFirstPick(null);setSecondPick(null);setLocked(false);
+      },900);
+    }
+  }
+
+  const bestDisp=best===9999?"—":`${best}s`;
+
+  if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
+    <div style={{textAlign:"center",padding:"36px 0"}}>
+      <div style={{fontSize:60,marginBottom:18}}>🃏</div>
+      <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Carte Coppia</div>
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Trova tutte le coppie romantiche nella griglia 4×4. Meno errori e meno tempo = più punti! <b style={{color:T.text}}>Sfida il partner al tuo record!</b></div>
+      {best<9999&&<div style={{marginTop:16,fontSize:13,color:T.a2,fontWeight:700}}>🏆 Record: {bestDisp}</div>}
+    </div>
+    <Btn T={T} grad={grad} onClick={start}>Inizia 🃏</Btn>
+  </div>);
+
+  if(phase==="done"){
+    const stored=parseInt(localStorage.getItem("bly_memory_best")||"9999");
+    const isNew=timer<best;
+    return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
+      <WinParticles/>
+      <div style={{fontSize:60,marginBottom:16}}>🎉</div>
+      <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Completato!</div>
+      <div style={{fontSize:40,fontWeight:800,color:T.a2,marginBottom:4}}>{timer}s</div>
+      <div style={{fontSize:14,color:T.sub,marginBottom:4}}>tempo impiegato · {mistakes} errori</div>
+      {isNew&&<div style={{fontSize:15,fontWeight:800,color:T.a1,marginBottom:8}}>🏆 NUOVO RECORD!</div>}
+      <div style={{fontSize:13,color:T.faint,marginBottom:30}}>+{game.cp} punti · tocca al partner! 😏</div>
+      <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn>
+      <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
+    </div>);
+  }
+
+  return(<div style={{padding:20,paddingBottom:90}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
+      <div style={{display:"flex",gap:14}}>
+        <span style={{fontSize:13,fontWeight:700,color:T.a2}}>🃏 {matches}/8</span>
+        <span style={{fontSize:13,fontWeight:700}}>⏱ {timer}s</span>
+        <span style={{fontSize:13,color:T.faint}}>❌ {mistakes}</span>
+      </div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+      {cards.map((c,i)=>(
+        <div key={c.id} onClick={()=>flip(i)}
+          style={{aspectRatio:"1",borderRadius:14,cursor:"pointer",transition:"transform 0.3s",transform:c.flipped||c.matched?"rotateY(0)":"rotateY(0)",perspective:600,
+            background:c.flipped||c.matched?`${T.surface}`:`${T.glass||T.a2}44`,
+            border:`2px solid ${c.matched?T.a2:c.flipped?T.a3:T.line2}`,
+            display:"flex",alignItems:"center",justifyContent:"center",fontSize:c.flipped||c.matched?26:20,
+            boxShadow:c.matched?`0 0 12px ${T.a2}55`:"none"}}>
+          {c.flipped||c.matched?c.emoji:"💝"}
+        </div>
+      ))}
+    </div>
+  </div>);
+}
+
+// ════════ BUBBLE POP ════════
+function BubblePop({game,onBack,setCp,onToast,T,G}){
+  const grad=G[game.g];
+  const TOTAL=40;
+  const [phase,setPhase]=useState("intro");
+  const [cells,setCells]=useState([]);
+  const [score,setScore]=useState(0);
+  const [time,setTime]=useState(30);
+
+  function makeCells(){
+    return Array.from({length:TOTAL},(_,i)=>{
+      const r=Math.random();
+      const e=r<0.12?"💣":r<0.25?"💖":"🫧";
+      return{id:i,e,popped:false};
+    });
+  }
+  function start(){setCells(makeCells());setScore(0);setTime(30);setPhase("play");}
+
+  useEffect(()=>{
+    if(phase!=="play")return;
+    if(time<=0){setPhase("done");if(score>0)setCp(p=>p+game.cp);return;}
+    const t=setTimeout(()=>setTime(v=>v-1),1000);return()=>clearTimeout(t);
+  },[phase,time]);
+
+  function pop(i){
+    if(cells[i].popped||phase!=="play")return;
+    const c=cells[i];
+    setCells(prev=>prev.map((x,j)=>j===i?{...x,popped:true}:x));
+    if(c.e==="💣"){setScore(s=>Math.max(0,s-2));onToast("💣 -2!");}
+    else if(c.e==="💖"){setScore(s=>s+3);onToast("💖 +3!");}
+    else setScore(s=>s+1);
+    // refill with new bubble after a bit
+    setTimeout(()=>setCells(prev=>prev.map((x,j)=>j===i?{...x,popped:false,e:Math.random()<0.12?"💣":Math.random()<0.25?"💖":"🫧",id:Math.random()}:x)),600);
+  }
+
+  if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
+    <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
+    <div style={{textAlign:"center",padding:"36px 0"}}>
+      <div style={{fontSize:60,marginBottom:18}}>🫧</div>
+      <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Scoppia Bolle</div>
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Scoppia più bolle in 30 secondi! 💖 vale +3, 💣 vale -2. <b style={{color:T.text}}>Sfida chi fa più punti!</b></div>
+    </div>
+    <Btn T={T} grad={grad} onClick={start}>Scoppia! 🫧</Btn>
+  </div>);
+
+  if(phase==="done")return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
+    {score>15&&<WinParticles/>}
+    <div style={{fontSize:60,marginBottom:16}}>🫧</div>
+    <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Tempo!</div>
+    <div style={{fontSize:42,fontWeight:800,color:T.a4,marginBottom:4}}>{score}</div>
+    <div style={{fontSize:14,color:T.sub,marginBottom:8}}>punti</div>
+    <div style={{fontSize:13,color:T.faint,marginBottom:30}}>{score>0?`+${game.cp} punti · tocca al partner! 😏`:"Riprova!"}</div>
+    <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn>
+    <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
+  </div>);
+
+  return(<div style={{padding:20,paddingBottom:90}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+      <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
+      <div style={{display:"flex",gap:14}}>
+        <span style={{fontSize:14,fontWeight:800,color:T.a4}}>🫧 {score}</span>
+        <span style={{fontSize:14,fontWeight:800,color:time<=5?T.a1:T.text}}>⏱ {time}s</span>
+      </div>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10}}>
+      {cells.map((c,i)=>(
+        <div key={c.id} onClick={()=>pop(i)}
+          style={{aspectRatio:"1",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,cursor:"pointer",
+            background:c.popped?"transparent":c.e==="💣"?`${T.a1}33`:c.e==="💖"?`${T.a2}44`:`${T.a4}33`,
+            border:c.popped?"none":`2px solid ${c.e==="💣"?T.a1:c.e==="💖"?T.a2:T.a4}55`,
+            transform:c.popped?"scale(0)":"scale(1)",transition:"transform 0.25s,background 0.2s",
+            boxShadow:c.popped?"none":`0 2px 8px ${T.a4}33`}}>
+          {c.popped?"":c.e}
+        </div>
+      ))}
+    </div>
+    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:12}}>Tocca le bolle · 💖+3 · 💣-2 🫧</div>
+  </div>);
+}
+
+// ════════ SNAKE — snake romantico (improved) ════════
+function Snake({game,onBack,setCp,onToast,T,G}){
+  const grad=G[game.g];
+  const N=16;
+  const BASE_SPEED=180;
+  const [phase,setPhase]=useState("intro");
+  const [snake,setSnake]=useState([{x:8,y:8}]);
+  const [dir,setDir]=useState({x:1,y:0});
+  const [food,setFood]=useState({x:12,y:8});
+  const [bonus,setBonus]=useState(null); // {x,y,expire} diamond bonus
+  const [score,setScore]=useState(0);
+  const [best]=useState(()=>parseInt(localStorage.getItem("bly_snake_best")||"0"));
+  const dirRef=useRef({x:1,y:0});
+  const snakeRef=useRef([{x:8,y:8}]);
+  const scoreRef=useRef(0);
+  const bonusRef=useRef(null);
+  const swipeRef=useRef(null);
+
+  function placeRandom(sn){let f;do{f={x:Math.floor(Math.random()*N),y:Math.floor(Math.random()*N)};}while(sn.some(s=>s.x===f.x&&s.y===f.y));return f;}
+  function start(){
+    const s=[{x:8,y:8}];
+    setSnake(s);snakeRef.current=s;
+    const d={x:1,y:0};setDir(d);dirRef.current=d;
+    const f=placeRandom(s);setFood(f);
+    setBonus(null);bonusRef.current=null;
+    scoreRef.current=0;setScore(0);
+    setPhase("play");
+  }
+
+  useEffect(()=>{
+    if(phase!=="play")return;
+    const speed=Math.max(80,BASE_SPEED-scoreRef.current*5);
     const t=setInterval(()=>{
       const sn=snakeRef.current;const d=dirRef.current;
-      const head={x:sn[0].x+d.x,y:sn[0].y+d.y};
-      if(head.x<0||head.x>=N||head.y<0||head.y>=N||sn.some(s=>s.x===head.x&&s.y===head.y)){
-        setPhase("over");if(score>0)setCp(p=>p+game.cp);return;
+      // wall wrapping
+      let hx=(sn[0].x+d.x+N)%N;
+      let hy=(sn[0].y+d.y+N)%N;
+      const head={x:hx,y:hy};
+      // only body collision kills
+      if(sn.slice(1).some(s=>s.x===head.x&&s.y===head.y)){
+        const sc=scoreRef.current;
+        const stored=parseInt(localStorage.getItem("bly_snake_best")||"0");
+        if(sc>stored)localStorage.setItem("bly_snake_best",String(sc));
+        if(sc>0)setCp(p=>p+game.cp);
+        setPhase("over");return;
       }
-      const ate=head.x===food.x&&head.y===food.y;
-      const ns=[head,...sn];if(!ate)ns.pop();
-      setSnake(ns);
-      if(ate){setScore(s=>s+1);setFood(placeFood(ns));}
-    },200);
+      const ateFood=head.x===food.x&&head.y===food.y;
+      const ateBonus=bonusRef.current&&head.x===bonusRef.current.x&&head.y===bonusRef.current.y;
+      const ns=[head,...sn];
+      if(!ateFood&&!ateBonus)ns.pop();
+      snakeRef.current=ns;
+      setSnake([...ns]);
+      if(ateFood){
+        const ns2=scoreRef.current+1;scoreRef.current=ns2;setScore(ns2);
+        setFood(placeRandom(ns));
+        // every 5 food spawn diamond bonus
+        if(ns2%5===0){
+          const b=placeRandom(ns);
+          const expire=Date.now()+4000;
+          bonusRef.current={...b,expire};
+          setBonus({...b,expire});
+          setTimeout(()=>{bonusRef.current=null;setBonus(null);},4000);
+        }
+      }
+      if(ateBonus){
+        const ns2=scoreRef.current+3;scoreRef.current=ns2;setScore(ns2);
+        bonusRef.current=null;setBonus(null);
+        onToast("💎 +3!");
+      }
+      // check bonus expiry
+      if(bonusRef.current&&Date.now()>bonusRef.current.expire){bonusRef.current=null;setBonus(null);}
+    },speed);
     return()=>clearInterval(t);
-  },[phase,food,score]);
+  },[phase,food]);
 
-  function turn(nx,ny){const d=dirRef.current;if(d.x===-nx&&d.y===-ny)return;setDir({x:nx,y:ny});}
+  function turn(nx,ny){const d=dirRef.current;if(d.x===-nx&&d.y===-ny)return;const nd={x:nx,y:ny};setDir(nd);dirRef.current=nd;}
   function swipeStart(e){const t=e.touches[0];swipeRef.current={x:t.clientX,y:t.clientY};}
   function swipeEnd(e){
     if(!swipeRef.current)return;
@@ -2047,30 +2582,64 @@ function Snake({game,onBack,setCp,onToast,T,G}){
     if(Math.abs(dx)>Math.abs(dy)){turn(dx>0?1:-1,0);}else{turn(0,dy>0?1:-1);}
   }
 
+  const currentBest=Math.max(best,score);
+
   if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
-    <div style={{textAlign:"center",padding:"36px 0"}}><div style={{fontSize:60,marginBottom:18}}>🐍</div><div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Snake Romantico</div><div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Guida il serpentello a mangiare i cuori 💕 e cresci. Non sbattere contro i muri o te stesso! <b style={{color:T.text}}>Chi mangia più cuori vince.</b></div></div>
+    <div style={{textAlign:"center",padding:"36px 0"}}>
+      <div style={{fontSize:60,marginBottom:18}}>🐍</div>
+      <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Snake Romantico</div>
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Mangia i cuori 💕 e cresci. Passa attraverso i muri! Solo il tuo corpo ti ferma. Ogni 5 cuori appare un 💎 bonus!</div>
+      {best>0&&<div style={{marginTop:16,fontSize:13,color:T.a3,fontWeight:700}}>🏆 Record: {best} cuori</div>}
+    </div>
     <Btn T={T} grad={grad} onClick={start}>Inizia 🐍</Btn>
   </div>);
 
-  if(phase==="over")return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
-    <div style={{fontSize:60,marginBottom:16}}>💕</div><div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Game Over!</div>
-    <div style={{fontSize:42,fontWeight:800,color:T.a3,marginBottom:4}}>{score}</div><div style={{fontSize:14,color:T.sub,marginBottom:8}}>cuori mangiati</div>
-    <div style={{fontSize:13,color:T.faint,marginBottom:30}}>{score>0?`+${game.cp} punti · tocca al partner! 😏`:"Riprovate!"}</div>
-    <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn><Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
-  </div>);
+  if(phase==="over"){
+    const stored=parseInt(localStorage.getItem("bly_snake_best")||"0");
+    const isNew=score>best;
+    return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
+      <WinParticles/>
+      <div style={{fontSize:60,marginBottom:16}}>💕</div>
+      <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Game Over!</div>
+      <div style={{fontSize:42,fontWeight:800,color:T.a3,marginBottom:4}}>{score}</div>
+      <div style={{fontSize:14,color:T.sub,marginBottom:8}}>cuori mangiati</div>
+      {isNew&&<div style={{fontSize:15,fontWeight:800,color:T.a1,marginBottom:8}}>🏆 NUOVO RECORD!</div>}
+      <div style={{fontSize:13,color:T.faint,marginBottom:8}}>Best: {stored} cuori</div>
+      <div style={{fontSize:13,color:T.faint,marginBottom:30}}>{score>0?`+${game.cp} punti · tocca al partner! 😏`:"Riprovate!"}</div>
+      <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn>
+      <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
+    </div>);
+  }
 
   return(<div style={{padding:20,paddingBottom:90}}>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
       <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
-      <span style={{fontSize:16,fontWeight:800,color:T.a3}}>💕 {score}</span>
+      <div style={{display:"flex",gap:12,alignItems:"center"}}>
+        <span style={{fontSize:16,fontWeight:800,color:T.a3}}>💕 {score}</span>
+        <span style={{fontSize:12,color:T.faint}}>Best:{currentBest}</span>
+      </div>
     </div>
-    <div onTouchStart={swipeStart} onTouchEnd={swipeEnd} style={{aspectRatio:"1",background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",borderRadius:16,border:`1px solid ${T.line2}`,padding:6,display:"grid",gridTemplateColumns:`repeat(${N},1fr)`,gridTemplateRows:`repeat(${N},1fr)`,gap:1,touchAction:"none"}}>
-      {Array.from({length:N*N}).map((_,i)=>{const x=i%N,y=Math.floor(i/N);const isHead=snake[0].x===x&&snake[0].y===y;const isBody=snake.some((s,j)=>j>0&&s.x===x&&s.y===y);const isFood=food.x===x&&food.y===y;
-        return<div key={i} style={{borderRadius:isHead?5:3,background:isHead?grad:isBody?T.a3:isFood?"transparent":"transparent",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"min(3.5vw,14px)"}}>{isFood?"💕":""}</div>;})}
+    <div onTouchStart={swipeStart} onTouchEnd={swipeEnd}
+      style={{aspectRatio:"1",background:`linear-gradient(135deg,${T.surface},${T.surface2})`,borderRadius:16,border:`1px solid ${T.line2}`,padding:4,display:"grid",gridTemplateColumns:`repeat(${N},1fr)`,gridTemplateRows:`repeat(${N},1fr)`,gap:1,touchAction:"none"}}>
+      {Array.from({length:N*N}).map((_,i)=>{
+        const x=i%N,y=Math.floor(i/N);
+        const headIdx=snake.findIndex((s,j)=>j===0&&s.x===x&&s.y===y);
+        const bodyIdx=snake.findIndex((s,j)=>j>0&&s.x===x&&s.y===y);
+        const isHead=headIdx===0&&snake[0].x===x&&snake[0].y===y;
+        const isBody=!isHead&&snake.some((s,j)=>j>0&&s.x===x&&s.y===y);
+        const bodyPos=isBody?snake.findIndex((s,j)=>j>0&&s.x===x&&s.y===y):-1;
+        const isFood=food.x===x&&food.y===y;
+        const isBonus=bonus&&bonus.x===x&&bonus.y===y;
+        let bg="transparent";
+        if(isHead)bg=T.a1;
+        else if(isBody){const t=bodyPos/snake.length;bg=t<0.33?T.a2:t<0.66?T.a3:T.a4;}
+        return(<div key={i} style={{borderRadius:isHead?5:3,background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"min(3vw,12px)",transition:isHead?"none":"background 0.3s"}}>
+          {isFood?"💕":isBonus?"💎":""}
+        </div>);
+      })}
     </div>
-    {/* D-pad */}
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginTop:18,gap:8}}>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginTop:14,gap:6}}>
       <DBtn T={T} grad={grad} on={()=>turn(0,-1)}>▲</DBtn>
       <div style={{display:"flex",gap:48}}>
         <DBtn T={T} grad={grad} on={()=>turn(-1,0)}>◀</DBtn>
@@ -2078,7 +2647,7 @@ function Snake({game,onBack,setCp,onToast,T,G}){
         <DBtn T={T} grad={grad} on={()=>turn(1,0)}>▶</DBtn>
       </div>
     </div>
-    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:10}}>Frecce o swipe sul campo 👆</div>
+    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:8}}>Swipe o frecce · passa attraverso i muri! 💕</div>
   </div>);
 }
 
