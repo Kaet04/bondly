@@ -1409,174 +1409,203 @@ const PAC_MAZE=[
   [0,0,0,1,0,1,0,0,0],
 ];
 function Pacman({game,onBack,setCp,onToast,T,G}){
-  const grad=G[game.g];
-  const N=9;
-  const FRUITS=["🍎","🍓","🍒","🍇","🍊","🍑","🍌","🍉","🫐","🍋","🍈","🍇"];
-  const [phase,setPhase]=useState("intro");
-  const [pac,setPac]=useState({x:0,y:0});
-  const [dir,setDir]=useState("right");
-  const [fruits,setFruits]=useState([]);
-  const [eaten,setEaten]=useState(0);
-  const [time,setTime]=useState(0);
-  const [ghost,setGhost]=useState({x:8,y:8});
-  const [gameOver,setGameOver]=useState(false);
-  const tickRef=useRef(null);
-  const ghostRef=useRef(null);
-  const timerRef=useRef(null);
+  const N=9,CELL=36;
+  const MAZE_W=N*CELL,MAZE_H=N*CELL,HUD=44;
+  const CW=MAZE_W,CH=MAZE_H+HUD;
+  const FRUITS=["🍎","🍓","🍒","🍇","🍊","🍑","🍌","🍉","🫐","🍋"];
+  const canvasRef=useRef(null);
+  const stRef=useRef(null);
+  const rafRef=useRef(null);
   const touchRef=useRef(null);
-  const dirRef=useRef("right");
+  const [phase,setPhase]=useState("intro");
+  const [dispEaten,setDispEaten]=useState(0);
+  const [dispTime,setDispTime]=useState("0.0");
+  const finalRef=useRef({eaten:0,time:0});
 
-  function isWall(x,y){if(x<0||x>=N||y<0||y>=N)return true;return PAC_MAZE[y][x]===1;}
+  function iW(x,y){if(x<0||x>=N||y<0||y>=N)return true;return PAC_MAZE[y][x]===1;}
 
-  function seed(){
+  function seedF(){
     const cells=[];
-    for(let y=0;y<N;y++)for(let x=0;x<N;x++){
-      if(!isWall(x,y)&&!(x===0&&y===0)&&!(x===8&&y===8))cells.push({x,y});
-    }
+    for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(!iW(x,y)&&!(x===0&&y===0)&&!(x===8&&y===8))cells.push({x,y});
     cells.sort(()=>Math.random()-0.5);
     return cells.slice(0,12).map((c,i)=>({...c,e:FRUITS[i%FRUITS.length],id:i}));
   }
 
-  function start(){
-    setPac({x:0,y:0});setDir("right");dirRef.current="right";
-    setEaten(0);setTime(0);setFruits(seed());
-    setGhost({x:8,y:8});setGameOver(false);setPhase("play");
+  function gMove(g,pac){
+    const opts=[[1,0],[-1,0],[0,1],[0,-1]].filter(([dx,dy])=>!iW(g.x+dx,g.y+dy)).map(([dx,dy])=>({x:g.x+dx,y:g.y+dy}));
+    if(!opts.length)return g;
+    if(Math.random()<0.72)opts.sort((a,b)=>(Math.abs(a.x-pac.x)+Math.abs(a.y-pac.y))-(Math.abs(b.x-pac.x)+Math.abs(b.y-pac.y)));
+    return opts[0];
   }
 
-  // ghost random movement
-  useEffect(()=>{
-    if(phase!=="play"||gameOver)return;
-    ghostRef.current=setInterval(()=>{
-      setGhost(g=>{
-        const moves=[];
-        if(!isWall(g.x+1,g.y))moves.push({x:g.x+1,y:g.y});
-        if(!isWall(g.x-1,g.y))moves.push({x:g.x-1,y:g.y});
-        if(!isWall(g.x,g.y+1))moves.push({x:g.x,y:g.y+1});
-        if(!isWall(g.x,g.y-1))moves.push({x:g.x,y:g.y-1});
-        if(moves.length===0)return g;
-        return moves[Math.floor(Math.random()*moves.length)];
-      });
-    },600);
-    return()=>clearInterval(ghostRef.current);
-  },[phase,gameOver]);
+  function makeSt(){return{pac:{x:0,y:0,dir:"right",nd:"right"},
+    g1:{x:8,y:8},g2:{x:4,y:4},
+    fruits:seedF(),eaten:0,time:0,fr:0,
+    pt:0,gt:0,g2t:0,parts:[]};}
 
-  // pacman movement
-  useEffect(()=>{
-    if(phase!=="play"||gameOver)return;
-    tickRef.current=setInterval(()=>{
-      setPac(p=>{
-        const d=dirRef.current;
-        let nx=p.x,ny=p.y;
-        if(d==="right")nx=p.x+1;
-        if(d==="left")nx=p.x-1;
-        if(d==="up")ny=p.y-1;
-        if(d==="down")ny=p.y+1;
-        if(isWall(nx,ny))return p;
-        return{x:nx,y:ny};
-      });
-    },220);
-    return()=>clearInterval(tickRef.current);
-  },[phase,gameOver]);
-
-  // timer
-  useEffect(()=>{
-    if(phase!=="play"||gameOver)return;
-    timerRef.current=setInterval(()=>setTime(v=>v+0.1),100);
-    return()=>clearInterval(timerRef.current);
-  },[phase,gameOver]);
-
-  // eat fruit + ghost collision
-  useEffect(()=>{
-    if(phase!=="play"||gameOver)return;
-    // ghost collision
-    if(ghost.x===pac.x&&ghost.y===pac.y){
-      clearInterval(tickRef.current);clearInterval(ghostRef.current);clearInterval(timerRef.current);
-      setGameOver(true);setPhase("over");onToast("👻 Il fantasma ti ha preso!");return;
-    }
-    setFruits(fs=>{
-      const hit=fs.find(f=>f.x===pac.x&&f.y===pac.y);
-      if(hit){
-        const left=fs.filter(f=>f.id!==hit.id);
-        setEaten(e=>e+1);
-        if(left.length===0){clearInterval(tickRef.current);clearInterval(ghostRef.current);clearInterval(timerRef.current);setCp(p=>p+game.cp);setPhase("done");}
-        return left;
+  function drawScene(ctx,st){
+    ctx.fillStyle=T.bg||'#0d0a1a';ctx.fillRect(0,0,CW,CH);
+    // Walls
+    for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+      const px=x*CELL,py=y*CELL+HUD;
+      if(iW(x,y)){
+        const wg=ctx.createLinearGradient(px,py,px+CELL,py+CELL);
+        wg.addColorStop(0,T.a2+'cc');wg.addColorStop(1,T.a2+'88');
+        ctx.shadowColor=T.a2;ctx.shadowBlur=6;
+        ctx.fillStyle=wg;ctx.fillRect(px+1,py+1,CELL-2,CELL-2);
+        ctx.shadowBlur=0;
+        ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=0.8;ctx.strokeRect(px+2,py+2,CELL-4,CELL-4);
+      } else {
+        ctx.fillStyle='rgba(255,255,255,0.025)';ctx.beginPath();ctx.arc(px+CELL/2,py+CELL/2,1.8,0,Math.PI*2);ctx.fill();
       }
-      return fs;
+    }
+    // Fruits
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    st.fruits.forEach(f=>{
+      const px=f.x*CELL+CELL/2,py=f.y*CELL+CELL/2+HUD;
+      const pulse=Math.sin(st.fr*0.1+f.id)*1.5;
+      ctx.shadowColor=T.a3;ctx.shadowBlur=8+pulse;
+      ctx.font=`${CELL*0.62}px serif`;ctx.fillText(f.e,px,py+1);ctx.shadowBlur=0;
     });
-  },[pac,ghost,phase,gameOver]);
-
-  function onSwipeStart(e){const t=e.touches[0];touchRef.current={x:t.clientX,y:t.clientY};}
-  function onSwipeEnd(e){
-    if(!touchRef.current)return;
-    const t=e.changedTouches[0];
-    const dx=t.clientX-touchRef.current.x,dy=t.clientY-touchRef.current.y;
-    touchRef.current=null;
-    if(Math.abs(dx)<20&&Math.abs(dy)<20)return;
-    const nd=Math.abs(dx)>Math.abs(dy)?(dx>0?"right":"left"):(dy>0?"down":"up");
-    setDir(nd);dirRef.current=nd;
+    // Particles
+    st.parts.forEach(p=>{const a=p.l/p.ml;ctx.globalAlpha=a;ctx.fillStyle=p.c;ctx.beginPath();ctx.arc(p.x,p.y,p.s*a,0,Math.PI*2);ctx.fill();});ctx.globalAlpha=1;
+    // Ghost 1
+    function drawG(gx,gy,col){
+      const px=gx*CELL+CELL/2,py=gy*CELL+CELL/2+HUD,r=CELL/2-3;
+      ctx.shadowColor=col;ctx.shadowBlur=14;ctx.fillStyle=col;
+      ctx.beginPath();ctx.arc(px,py-r*0.15,r,Math.PI,0);
+      const by2=py+r*0.85;
+      ctx.lineTo(px+r,by2);
+      const ww2=r*2/3;
+      for(let i=3;i>=0;i--){ctx.lineTo(px-r+i*ww2,by2+(i%2===0?0:r*0.35));}
+      ctx.closePath();ctx.fill();ctx.shadowBlur=0;
+      ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(px-r*0.3,py-r*0.2,r*0.28,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(px+r*0.3,py-r*0.2,r*0.28,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#1155ff';ctx.beginPath();ctx.arc(px-r*0.3+Math.sin(st.fr*0.08)*2,py-r*0.17,r*0.13,0,Math.PI*2);ctx.fill();
+      ctx.beginPath();ctx.arc(px+r*0.3+Math.sin(st.fr*0.08)*2,py-r*0.17,r*0.13,0,Math.PI*2);ctx.fill();
+    }
+    drawG(st.g1.x,st.g1.y,T.a1||'#ff4daa');
+    drawG(st.g2.x,st.g2.y,T.a4||'#9D6BFF');
+    // Pacman
+    const b=st.pac,px2=b.x*CELL+CELL/2,py2=b.y*CELL+CELL/2+HUD;
+    const mouth=0.22*Math.abs(Math.sin(st.fr*0.18));
+    const rot2={right:0,down:Math.PI/2,left:Math.PI,up:-Math.PI/2}[b.dir];
+    ctx.save();ctx.translate(px2,py2);ctx.rotate(rot2);
+    ctx.shadowColor='#FFD700';ctx.shadowBlur=20;ctx.fillStyle='#FFD700';
+    ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,CELL/2-3,mouth*Math.PI,(2-mouth)*Math.PI);ctx.closePath();ctx.fill();
+    ctx.shadowBlur=0;ctx.restore();
+    // HUD bar
+    ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,0,CW,HUD);
+    ctx.fillStyle='#fff';ctx.font='bold 15px Sora,sans-serif';ctx.textAlign='left';ctx.textBaseline='middle';
+    ctx.fillText(`🍎 ${st.eaten}/12`,8,HUD/2);
+    ctx.textAlign='right';ctx.fillText(`⏱ ${st.time.toFixed(1)}s`,CW-8,HUD/2);
+    // Maze border glow
+    ctx.strokeStyle=T.a2;ctx.lineWidth=2;ctx.shadowColor=T.a2;ctx.shadowBlur=10;
+    ctx.strokeRect(0,HUD,CW,MAZE_H);ctx.shadowBlur=0;
   }
-  function setDirFn(d){setDir(d);dirRef.current=d;}
 
-  const rot={right:0,down:90,left:180,up:270}[dir];
+  useEffect(()=>{
+    if(phase!=='play')return;
+    const cv=canvasRef.current;if(!cv)return;
+    const ctx=cv.getContext('2d');
+    const st=makeSt();stRef.current=st;
+    const MV={right:{x:1,y:0},left:{x:-1,y:0},up:{x:0,y:-1},down:{x:0,y:1}};
+    const PAC_F=13,G1_F=33,G2_F=43;
 
-  if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
+    function end(dead){
+      cancelAnimationFrame(rafRef.current);
+      finalRef.current={eaten:st.eaten,time:st.time};
+      if(!dead)setCp(p=>p+game.cp);
+      drawScene(ctx,st);setPhase(dead?'over':'done');
+    }
+
+    function tick(){
+      st.fr++;st.time+=1/60;
+      const ts=st.time.toFixed(1);setDispTime(ts);
+      // Pacman move
+      st.pt++;if(st.pt>=PAC_F){st.pt=0;
+        const tryDir=(d)=>{const {x:dx,y:dy}=MV[d]||{x:0,y:0};return!iW(st.pac.x+dx,st.pac.y+dy)?d:null;};
+        const ok=tryDir(st.pac.nd);
+        if(ok){const {x:dx,y:dy}=MV[ok];st.pac.x+=dx;st.pac.y+=dy;st.pac.dir=ok;}
+        else{const ok2=tryDir(st.pac.dir);if(ok2){const {x:dx,y:dy}=MV[ok2];st.pac.x+=dx;st.pac.y+=dy;}}
+      }
+      // Ghost moves
+      st.gt++;if(st.gt>=G1_F){st.gt=0;const ng=gMove(st.g1,st.pac);st.g1.x=ng.x;st.g1.y=ng.y;}
+      st.g2t++;if(st.g2t>=G2_F){st.g2t=0;const ng=gMove(st.g2,st.pac);st.g2.x=ng.x;st.g2.y=ng.y;}
+      // Eat
+      const hf=st.fruits.find(f=>f.x===st.pac.x&&f.y===st.pac.y);
+      if(hf){
+        st.fruits=st.fruits.filter(f=>f.id!==hf.id);st.eaten++;setDispEaten(st.eaten);
+        const fpx=hf.x*CELL+CELL/2,fpy=hf.y*CELL+CELL/2+HUD;
+        for(let i=0;i<10;i++)st.parts.push({x:fpx,y:fpy,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5-2,l:22,ml:22,c:T.a3||'#c77dff',s:4});
+        if(!st.fruits.length){end(false);return;}
+      }
+      // Ghost hit
+      if((st.g1.x===st.pac.x&&st.g1.y===st.pac.y)||(st.g2.x===st.pac.x&&st.g2.y===st.pac.y)){end(true);return;}
+      st.parts=st.parts.filter(p=>p.l>0);st.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.18;p.l--;});
+      drawScene(ctx,st);
+      rafRef.current=requestAnimationFrame(tick);
+    }
+    rafRef.current=requestAnimationFrame(tick);
+    return()=>cancelAnimationFrame(rafRef.current);
+  },[phase]);
+
+  function setD(d){const st=stRef.current;if(!st)return;st.pac.nd=d;}
+  function onSwS(e){const t=e.touches[0];touchRef.current={x:t.clientX,y:t.clientY};}
+  function onSwE(e){if(!touchRef.current)return;const t=e.changedTouches[0];const dx=t.clientX-touchRef.current.x,dy=t.clientY-touchRef.current.y;touchRef.current=null;if(Math.abs(dx)<20&&Math.abs(dy)<20)return;setD(Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up'));}
+  const csw=Math.min((typeof window!=='undefined'?window.innerWidth:320)-24,360);
+  const csh=Math.round(csw*(CH/CW));
+
+  if(phase==='intro')return(<div style={{padding:20,paddingBottom:90}}>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
-    <div style={{textAlign:"center",padding:"36px 0"}}>
-      <div style={{fontSize:60,marginBottom:18}}>🟡</div>
+    <div style={{textAlign:"center",padding:"24px 0"}}>
+      <div style={{fontSize:64,marginBottom:16}}>🟡</div>
       <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Mangia-Frutta</div>
-      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Guida la palla nel labirinto e mangia 12 frutti! Attento al fantasma 👻 che ti insegue. <b style={{color:T.text}}>Il più veloce della coppia vince!</b></div>
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Guida Pac-Man nel labirinto Canvas! Mangia 12 frutti e sfuggi ai 2 fantasmi. <b style={{color:T.text}}>Chi è più veloce vince!</b></div>
     </div>
-    <Btn T={T} grad={grad} onClick={start}>Inizia a mangiare 🍎</Btn>
+    <Btn T={T} grad={G[game.g]} onClick={()=>setPhase('play')}>Inizia 🟡</Btn>
   </div>);
 
-  if(phase==="done")return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
+  if(phase==='done')return(<div style={{padding:24,textAlign:"center",paddingTop:60}}>
     <WinParticles/>
-    <div style={{fontSize:60,marginBottom:16}}>🏆</div>
+    <div style={{fontSize:56,marginBottom:12}}>🏆</div>
     <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Tutto mangiato!</div>
-    <div style={{fontSize:40,fontWeight:800,color:T.a3,marginBottom:4}}>{time.toFixed(1)}s</div>
+    <div style={{fontSize:52,fontWeight:900,color:T.a3,marginBottom:2}}>{finalRef.current.time.toFixed(1)}s</div>
     <div style={{fontSize:14,color:T.sub,marginBottom:8}}>il tuo tempo</div>
-    <div style={{fontSize:13,color:T.faint,marginBottom:30}}>+{game.cp} punti · ora tocca al partner battere il tempo! 😏</div>
-    <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn>
+    <div style={{fontSize:13,color:T.faint,marginBottom:28}}>+{game.cp} punti coppia 💞 · ora tocca al partner!</div>
+    <Btn T={T} grad={G[game.g]} onClick={()=>setPhase('play')}>Rigioca</Btn>
     <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
   </div>);
 
-  if(phase==="over")return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
-    <div style={{fontSize:60,marginBottom:16}}>👻</div>
+  if(phase==='over')return(<div style={{padding:24,textAlign:"center",paddingTop:60}}>
+    <div style={{fontSize:56,marginBottom:12}}>👻</div>
     <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Preso dal fantasma!</div>
-    <div style={{fontSize:40,fontWeight:800,color:T.a3,marginBottom:4}}>{eaten}/12</div>
+    <div style={{fontSize:52,fontWeight:900,color:T.a1,marginBottom:2}}>{finalRef.current.eaten}/12</div>
     <div style={{fontSize:14,color:T.sub,marginBottom:8}}>frutti mangiati</div>
-    <div style={{fontSize:13,color:T.faint,marginBottom:30}}>Riprova!</div>
-    <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn>
+    <div style={{fontSize:13,color:T.faint,marginBottom:28}}>Riprova! 💪</div>
+    <Btn T={T} grad={G[game.g]} onClick={()=>setPhase('play')}>Rigioca</Btn>
     <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
   </div>);
 
-  return(<div style={{padding:20,paddingBottom:90}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+  return(<div style={{padding:"12px 12px 90px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
       <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
-      <div style={{display:"flex",gap:14}}><span style={{fontSize:14,fontWeight:800,color:T.a3}}>🍎 {eaten}/12</span><span style={{fontSize:14,fontWeight:800}}>⏱ {time.toFixed(1)}s</span></div>
+      <span style={{fontSize:14,fontWeight:800,color:T.a3}}>🍎 {dispEaten}/12 · ⏱ {dispTime}s</span>
     </div>
-    <div onTouchStart={onSwipeStart} onTouchEnd={onSwipeEnd}
-      style={{background:T.glass||T.surface,backdropFilter:T.glass?"blur(12px)":"none",WebkitBackdropFilter:T.glass?"blur(12px)":"none",borderRadius:18,border:`1px solid ${T.line2}`,padding:6,aspectRatio:"1",display:"grid",gridTemplateColumns:`repeat(${N},1fr)`,gridTemplateRows:`repeat(${N},1fr)`,gap:2,touchAction:"none"}}>
-      {Array.from({length:N*N}).map((_,i)=>{
-        const x=i%N,y=Math.floor(i/N);
-        const wall=PAC_MAZE[y][x]===1;
-        const f=fruits.find(ff=>ff.x===x&&ff.y===y);
-        const isPac=pac.x===x&&pac.y===y;
-        const isGhost=ghost.x===x&&ghost.y===y;
-        return(<div key={i} style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:"min(4.5vw,18px)",borderRadius:4,background:wall?`${T.a2}55`:isPac?`${T.a3}22`:"transparent",border:wall?`1px solid ${T.a2}44`:"none"}}>
-          {isPac?<span style={{transform:`rotate(${rot}deg)`,transition:"transform 0.15s"}}>🟡</span>:isGhost?"👻":f?f.e:wall?"":null}
-        </div>);
-      })}
+    <div style={{display:"flex",justifyContent:"center"}}>
+      <canvas ref={canvasRef} width={CW} height={CH}
+        style={{width:csw,height:csh,borderRadius:16,border:`2px solid ${T.line2}`,display:"block",touchAction:"none",boxShadow:`0 0 40px ${T.a2}22,0 8px 32px rgba(0,0,0,0.4)`}}
+        onTouchStart={onSwS} onTouchEnd={onSwE}/>
     </div>
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginTop:16,gap:8}}>
-      <DBtn T={T} grad={grad} on={()=>setDirFn("up")}>▲</DBtn>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginTop:14,gap:8}}>
+      <DBtn T={T} grad={G[game.g]} on={()=>setD('up')}>▲</DBtn>
       <div style={{display:"flex",gap:48}}>
-        <DBtn T={T} grad={grad} on={()=>setDirFn("left")}>◀</DBtn>
-        <DBtn T={T} grad={grad} on={()=>setDirFn("down")}>▼</DBtn>
-        <DBtn T={T} grad={grad} on={()=>setDirFn("right")}>▶</DBtn>
+        <DBtn T={T} grad={G[game.g]} on={()=>setD('left')}>◀</DBtn>
+        <DBtn T={T} grad={G[game.g]} on={()=>setD('down')}>▼</DBtn>
+        <DBtn T={T} grad={G[game.g]} on={()=>setD('right')}>▶</DBtn>
       </div>
     </div>
-    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:10}}>Frecce o swipe · evita il 👻!</div>
+    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:8}}>Swipe o D-pad · evita i 2 fantasmi! 👻</div>
   </div>);
 }
 function DBtn({children,on,T,grad}){
@@ -1728,105 +1757,191 @@ function TapGame({game,onBack,setCp,onToast,T,G}){
 
 // ════════ STACK — torre dei sogni (improved) ════════
 function Stack({game,onBack,setCp,onToast,T,G}){
-  const grad=G[game.g];
+  const CW=300,CH=480,BH=24,MARGIN=30;
+  const INNER=CW-MARGIN*2; // inner play area width
+  const canvasRef=useRef(null);
+  const stRef=useRef(null);
+  const rafRef=useRef(null);
   const [phase,setPhase]=useState("intro");
-  const [blocks,setBlocks]=useState([]);
-  const [cur,setCur]=useState({x:0,w:60,dir:1});
-  const [score,setScore]=useState(0);
-  const [combo,setCombo]=useState(0);
-  const [flash,setFlash]=useState(null);
-  const [best]=useState(()=>parseInt(localStorage.getItem("bly_stack_best")||"0"));
-  const BW=200;
-  const TIER_GRADS=[G.a1,G.a2,G.a3,G.a4,G.a5];
+  const [displayScore,setDisplayScore]=useState(0);
+  const [isNewBest,setIsNewBest]=useState(false);
+  const finalRef=useRef(0);
+  const COLORS=[T.a1,T.a2,T.a3,T.a4,T.a5||T.a1];
 
-  function start(){setBlocks([{x:70,w:60}]);setCur({x:0,w:60,dir:1});setScore(0);setCombo(0);setFlash(null);setPhase("play");}
-
-  useEffect(()=>{
-    if(phase!=="play")return;
-    const speed=Math.min(6.0,2.2+score*0.15);
-    let raf;
-    const step=()=>{
-      setCur(c=>{
-        let nx=c.x+c.dir*speed;
-        if(nx<0){nx=0;return{...c,x:nx,dir:1};}
-        if(nx+c.w>BW){nx=BW-c.w;return{...c,x:nx,dir:-1};}
-        return{...c,x:nx};
-      });
-      raf=requestAnimationFrame(step);
-    };
-    raf=requestAnimationFrame(step);
-    return()=>cancelAnimationFrame(raf);
-  },[phase,score]);
-
-  function drop(){
-    const top=blocks[blocks.length-1];
-    const overlapL=Math.max(cur.x,top.x);
-    const overlapR=Math.min(cur.x+cur.w,top.x+top.w);
-    const w=overlapR-overlapL;
-    if(w<=0){
-      const sc=score;
-      const stored=parseInt(localStorage.getItem("bly_stack_best")||"0");
-      if(sc>stored)localStorage.setItem("bly_stack_best",String(sc));
-      setPhase("over");if(score>0)setCp(p=>p+game.cp);return;
-    }
-    const isPerfect=w/cur.w>0.95;
-    const nb={x:overlapL,w:isPerfect?cur.w:w};
-    setBlocks(prev=>[...prev,nb]);
-    const newCombo=isPerfect?combo+1:0;
-    setCombo(newCombo);
-    let pts=1;
-    if(isPerfect){pts+=2;}
-    if(newCombo>=3){pts+=newCombo-2;setFlash(`COMBO x${newCombo}! +${pts}`);}
-    else if(isPerfect){setFlash("PERFETTO! +3");}
-    else{setFlash(null);}
-    if(flash)setTimeout(()=>setFlash(null),1000);
-    setScore(s=>s+pts);
-    setCur({x:0,w:isPerfect?cur.w:w,dir:1});
+  function makeSt(){
+    return{blocks:[{x:MARGIN+INNER/2-INNER*0.4,w:INNER*0.6}],cur:{x:MARGIN,w:INNER*0.6,dir:1},
+      score:0,combo:0,fr:0,flashText:'',flashLife:0,parts:[],floats:[],over:false};
   }
 
-  const currentBest=Math.max(best,score);
+  function rr(ctx,x,y,w,h,r){if(w<=0||h<=0)return;ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();}
 
-  if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
+  function blockY(idx,total){
+    const BASE=CH-40;
+    const scroll=Math.max(0,(total-12)*BH);
+    return BASE-(idx*BH)+scroll;
+  }
+
+  function drawScene(ctx,st){
+    // Background — night sky
+    const bg=ctx.createLinearGradient(0,0,0,CH);
+    bg.addColorStop(0,'#040210');bg.addColorStop(0.5,T.bg||'#0d0a1a');bg.addColorStop(1,'#1a0d30');
+    ctx.fillStyle=bg;ctx.fillRect(0,0,CW,CH);
+
+    // City silhouette
+    ctx.fillStyle='rgba(255,255,255,0.03)';
+    [[20,220,40,160],[70,240,30,180],[110,210,50,170],[170,230,40,160],[220,205,60,175],[270,225,25,155]].forEach(([x,y,w,h])=>{
+      ctx.fillRect(x,y,w,CH-y);
+      // windows
+      for(let wy=y+10;wy<CH-20;wy+=16)for(let wx=x+6;wx<x+w-4;wx+=10){
+        if(Math.random()<0.35){ctx.fillStyle=`rgba(255,220,100,0.06)`;ctx.fillRect(wx,wy,4,6);}
+        ctx.fillStyle='rgba(255,255,255,0.03)';
+      }
+    });
+
+    // Stars
+    ctx.fillStyle='rgba(255,255,255,0.5)';
+    for(let i=0;i<30;i++){const blink=(st.fr*0.02+i*0.4)%1;if(blink<0.5){ctx.globalAlpha=blink;ctx.beginPath();ctx.arc(i*10+5,10+i*4%80,0.8,0,Math.PI*2);ctx.fill();}}
+    ctx.globalAlpha=1;
+
+    // Tower blocks
+    const N=st.blocks.length;
+    st.blocks.forEach((b,i)=>{
+      const y=blockY(i,N);
+      if(y<-BH||y>CH)return;
+      const col=COLORS[(i)%COLORS.length];
+      // glass gradient
+      const bg2=ctx.createLinearGradient(b.x,y,b.x+b.w,y+BH);
+      bg2.addColorStop(0,col+'cc');bg2.addColorStop(0.5,col+'ee');bg2.addColorStop(1,col+'88');
+      ctx.fillStyle=bg2;rr(ctx,b.x,y,b.w,BH,5);ctx.fill();
+      // reflection
+      ctx.fillStyle='rgba(255,255,255,0.15)';rr(ctx,b.x+3,y+3,b.w-6,BH/2-2,3);ctx.fill();
+      // glow on top block
+      if(i===N-1){ctx.shadowColor=col;ctx.shadowBlur=18;ctx.strokeStyle=col;ctx.lineWidth=1.5;rr(ctx,b.x,y,b.w,BH,5);ctx.stroke();ctx.shadowBlur=0;}
+    });
+
+    // Moving block — neon glow
+    const c=st.cur;const ci=N%COLORS.length;const cc=COLORS[ci];
+    const cy=blockY(N,N)-BH-4;
+    if(cy>-BH&&cy<CH){
+      ctx.shadowColor=cc;ctx.shadowBlur=28;
+      const mg=ctx.createLinearGradient(c.x,cy,c.x+c.w,cy+BH);
+      mg.addColorStop(0,cc+'bb');mg.addColorStop(0.5,cc);mg.addColorStop(1,cc+'bb');
+      ctx.fillStyle=mg;rr(ctx,c.x,cy,c.w,BH,5);ctx.fill();
+      ctx.shadowBlur=0;
+      // moving glow bar
+      ctx.fillStyle='rgba(255,255,255,0.3)';rr(ctx,c.x+2,cy+2,c.w-4,7,3);ctx.fill();
+    }
+
+    // Particles
+    st.parts.forEach(p=>{const a=p.l/p.ml;ctx.globalAlpha=a;ctx.fillStyle=p.c;ctx.shadowColor=p.c;ctx.shadowBlur=8;ctx.beginPath();ctx.arc(p.x,p.y,p.s*(0.3+a*0.7),0,Math.PI*2);ctx.fill();});
+    ctx.globalAlpha=1;ctx.shadowBlur=0;
+
+    // Float texts
+    st.floats.forEach(f=>{const a=f.l/f.ml;ctx.globalAlpha=a;ctx.fillStyle=f.c||T.a1;ctx.font=`800 ${f.sz||18}px Sora,sans-serif`;ctx.textAlign='center';ctx.fillText(f.t,f.x,f.y);ctx.globalAlpha=1;});
+
+    // Flash message
+    if(st.flashLife>0){const a=Math.min(1,st.flashLife/20);ctx.globalAlpha=a;ctx.fillStyle=T.a1;ctx.font='bold 22px Sora,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.shadowColor=T.a1;ctx.shadowBlur=20;ctx.fillText(st.flashText,CW/2,CH/2-60);ctx.shadowBlur=0;ctx.globalAlpha=1;}
+
+    // Score top
+    ctx.fillStyle='rgba(0,0,0,0.4)';rr(ctx,CW/2-44,8,88,32,8);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 18px Sora,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(`🗼 ${st.score}`,CW/2,24);
+
+    // Ground line
+    ctx.strokeStyle=`${T.a2}88`;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(MARGIN,CH-36);ctx.lineTo(CW-MARGIN,CH-36);ctx.stroke();
+
+    if(st.fr<60){ctx.globalAlpha=Math.max(0,(60-st.fr)/60);ctx.fillStyle='rgba(255,255,255,0.7)';ctx.font='13px Sora,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('Tocca per posare! 👆',CW/2,CH-16);ctx.globalAlpha=1;}
+  }
+
+  useEffect(()=>{
+    if(phase!=='play')return;
+    const cv=canvasRef.current;if(!cv)return;
+    const ctx=cv.getContext('2d');
+    const st=makeSt();stRef.current=st;
+
+    function tick(){
+      st.fr++;
+      const speed=Math.min(5.5,2.0+st.score*0.14);
+      let nx=st.cur.x+st.cur.dir*speed;
+      if(nx<=MARGIN){nx=MARGIN;st.cur.dir=1;}
+      if(nx+st.cur.w>=CW-MARGIN){nx=CW-MARGIN-st.cur.w;st.cur.dir=-1;}
+      st.cur.x=nx;
+      if(st.flashLife>0)st.flashLife--;
+      st.parts=st.parts.filter(p=>p.l>0);st.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.2;p.l--;});
+      st.floats=st.floats.filter(f=>f.l>0);st.floats.forEach(f=>{f.y+=f.vy;f.l--;});
+      drawScene(ctx,st);
+      rafRef.current=requestAnimationFrame(tick);
+    }
+    rafRef.current=requestAnimationFrame(tick);
+    return()=>cancelAnimationFrame(rafRef.current);
+  },[phase]);
+
+  function drop(){
+    const st=stRef.current;if(!st)return;
+    const top=st.blocks[st.blocks.length-1];
+    const c=st.cur;
+    const ol=Math.max(c.x,top.x),or2=Math.min(c.x+c.w,top.x+top.w);
+    const ow=or2-ol;
+    if(ow<=0){
+      finalRef.current=st.score;
+      const bst=parseInt(localStorage.getItem('bly_stack_best')||'0');
+      if(st.score>bst){localStorage.setItem('bly_stack_best',String(st.score));setIsNewBest(true);}
+      if(st.score>0)setCp(p=>p+game.cp);
+      cancelAnimationFrame(rafRef.current);setPhase('over');return;
+    }
+    const perf=ow/c.w>0.95;
+    const nw=perf?c.w:ow;const nx2=perf?c.x:ol;
+    st.blocks.push({x:nx2,w:nw});
+    const nc=perf?st.combo+1:0;st.combo=nc;
+    let pts=1;if(perf)pts+=2;if(nc>=3)pts+=nc-2;
+    st.score+=pts;setDisplayScore(st.score);
+    const bx=nx2+nw/2,by=blockY(st.blocks.length-1,st.blocks.length);
+    // particles
+    const col=COLORS[st.blocks.length%COLORS.length];
+    for(let i=0;i<(perf?16:8);i++)st.parts.push({x:bx,y:by,vx:(Math.random()-.5)*(perf?7:4),vy:(Math.random()-.5)*5-2,l:perf?45:28,ml:perf?45:28,c:perf?'#FFD700':col,s:perf?5:3});
+    if(perf){st.flashText=nc>=3?`COMBO x${nc}! +${pts}`:'PERFETTO! +3';st.flashLife=55;st.floats.push({t:`+${pts}`,x:bx,y:by-10,vy:-1.4,l:45,ml:45,c:perf?'#FFD700':T.a1,sz:22});}
+    st.cur={x:MARGIN,w:nw,dir:1};
+  }
+
+  const best=parseInt(localStorage.getItem('bly_stack_best')||'0');
+  const csw=Math.min((typeof window!=='undefined'?window.innerWidth:320)-24,340);
+  const csh=Math.round(csw*(CH/CW));
+
+  if(phase==='intro')return(<div style={{padding:20,paddingBottom:90}}>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
-    <div style={{textAlign:"center",padding:"36px 0"}}>
-      <div style={{fontSize:60,marginBottom:18}}>🗼</div>
+    <div style={{textAlign:"center",padding:"24px 0"}}>
+      <div style={{fontSize:64,marginBottom:16}}>🗼</div>
       <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Torre dei Sogni</div>
-      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Tocca per posare ogni blocco. Drop perfetto (+3)! 3 consecutivi = COMBO! <b style={{color:T.text}}>Chi la costruisce più alta vince!</b></div>
-      {best>0&&<div style={{marginTop:16,fontSize:13,color:T.a5,fontWeight:700}}>🏆 Record: {best} piani</div>}
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Tocca per posare ogni blocco a 60fps! Drop perfetto +3 pts. 3 perfetti di fila = COMBO con moltiplicatore!</div>
+      {best>0&&<div style={{marginTop:14,fontSize:13,color:T.a5||T.a1,fontWeight:700}}>🏆 Record: {best} piani</div>}
     </div>
-    <Btn T={T} grad={grad} onClick={start}>Costruisci 🗼</Btn>
+    <Btn T={T} grad={G[game.g]} onClick={()=>setPhase('play')}>Costruisci 🗼</Btn>
   </div>);
 
-  if(phase==="over")return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
-    {score>best&&<WinParticles/>}
-    <div style={{fontSize:60,marginBottom:16}}>🏆</div>
+  if(phase==='over')return(<div style={{padding:24,textAlign:"center",paddingTop:60}}>
+    {isNewBest&&<WinParticles/>}
+    <div style={{fontSize:56,marginBottom:12}}>🏆</div>
     <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Torre crollata!</div>
-    <div style={{fontSize:42,fontWeight:800,color:T.a5,marginBottom:4}}>{score}</div>
+    <div style={{fontSize:52,fontWeight:900,color:T.a5||T.a1,marginBottom:2}}>{finalRef.current}</div>
     <div style={{fontSize:14,color:T.sub,marginBottom:8}}>piani costruiti</div>
-    {score>best&&<div style={{fontSize:15,fontWeight:800,color:T.a1,marginBottom:8}}>🏆 NUOVO RECORD!</div>}
-    <div style={{fontSize:13,color:T.faint,marginBottom:4}}>Best: {currentBest} piani</div>
-    <div style={{fontSize:13,color:T.faint,marginBottom:30}}>{score>0?`+${game.cp} punti · ora tocca al partner battervi! 😏`:"Riprovate!"}</div>
-    <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn>
+    {isNewBest&&<div style={{fontSize:15,fontWeight:800,color:T.a1,marginBottom:8}}>🏆 NUOVO RECORD!</div>}
+    <div style={{fontSize:13,color:T.faint,marginBottom:4}}>Best: {Math.max(best,finalRef.current)}</div>
+    <div style={{fontSize:13,color:T.faint,marginBottom:28}}>{finalRef.current>0?`+${game.cp} punti coppia 💞`:"Riprova!"}</div>
+    <Btn T={T} grad={G[game.g]} onClick={()=>{setIsNewBest(false);setPhase('play');}}>Rigioca</Btn>
     <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
   </div>);
 
-  const visible=blocks.slice(-8);
-  return(<div onMouseDown={drop} onTouchStart={e=>{e.preventDefault();drop();}} style={{padding:20,paddingBottom:90,minHeight:"70vh",cursor:"pointer",userSelect:"none"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-      <span onClick={e=>{e.stopPropagation();onBack();}} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
-      <div style={{display:"flex",gap:10,alignItems:"center"}}>
-        {combo>=3&&<span style={{fontSize:12,fontWeight:800,color:T.a1,background:`${T.a1}22`,borderRadius:8,padding:"2px 7px"}}>COMBO x{combo}</span>}
-        <span style={{fontSize:18,fontWeight:800,color:T.a5}}>🗼 {score}</span>
-      </div>
+  return(<div style={{padding:"12px 12px 90px",cursor:"pointer",userSelect:"none"}} onClick={drop} onTouchStart={e=>{e.preventDefault();drop();}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}} onClick={e=>e.stopPropagation()}>
+      <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
+      <span style={{fontSize:16,fontWeight:800,color:T.a5||T.a1}}>🗼 {displayScore}</span>
     </div>
-    {flash&&<div style={{textAlign:"center",fontSize:18,fontWeight:900,color:T.a1,marginBottom:8,animation:"none"}}>{flash}</div>}
-    <div style={{position:"relative",height:420,background:`linear-gradient(180deg,${T.a4}0A,${T.a1}06)`,borderRadius:20,border:`1px solid ${T.line}`,overflow:"hidden"}}>
-      <div style={{position:"absolute",left:`${(cur.x/BW)*100}%`,top:20,width:`${(cur.w/BW)*100}%`,height:26,background:TIER_GRADS[score%5],borderRadius:6,boxShadow:`0 0 18px ${T.a1}88, 0 4px 12px ${T.a4}44`}}/>
-      {visible.map((b,i)=>(
-        <div key={i} style={{position:"absolute",left:`${(b.x/BW)*100}%`,bottom:i*30,width:`${(b.w/BW)*100}%`,height:28,background:TIER_GRADS[(score-visible.length+i+5)%5],borderRadius:6,border:`1px solid rgba(255,255,255,0.2)`,boxShadow:`0 2px 6px rgba(0,0,0,0.15)`}}/>
-      ))}
-      <div style={{position:"absolute",bottom:8,left:0,right:0,textAlign:"center",fontSize:13,fontWeight:700,color:T.faint}}>Tocca per posare 👆</div>
+    <div style={{display:"flex",justifyContent:"center"}}>
+      <canvas ref={canvasRef} width={CW} height={CH}
+        style={{width:csw,height:csh,borderRadius:20,border:`2px solid ${T.line2}`,display:"block",touchAction:"none",boxShadow:`0 0 40px ${T.a1}22,0 8px 32px rgba(0,0,0,0.4)`}}/>
     </div>
+    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:10}}>Tocca per posare il blocco 🗼</div>
   </div>);
 }
 
@@ -2190,124 +2305,150 @@ function TrovaIntruso({game,onBack,setCp,onToast,T,G}){
 
 // ════════ FLAPPY HEART ════════
 function FlappyHeart({game,onBack,setCp,onToast,T,G}){
-  const grad=G[game.g];
-  const FIELD_H=300,FIELD_W=320,GAP=90,PIPE_W=36;
-  const [phase,setPhase]=useState("intro");
-  const [renderTick,setRenderTick]=useState(0);
-  const [best]=useState(()=>parseInt(localStorage.getItem("bly_flappy_best")||"0"));
-  const stateRef=useRef({bird:{y:150,vy:0},pipes:[],score:0,frame:0,alive:true,jumpPending:false});
+  const CW=320,CH=480,BIRD_X=70,BIRD_R=15,GAP=110,PIPE_W=52,GRAVITY=0.4,JUMP_VEL=-7.8,SPEED=2.8;
+  const canvasRef=useRef(null);
+  const stRef=useRef(null);
   const rafRef=useRef(null);
-  const scoreDisp=useRef(0);
+  const [phase,setPhase]=useState("intro");
   const [displayScore,setDisplayScore]=useState(0);
   const [isNewBest,setIsNewBest]=useState(false);
-  const finalScore=useRef(0);
+  const finalRef=useRef(0);
 
-  function spawnPipe(frameX){
-    const gapTop=30+Math.random()*(FIELD_H-GAP-30);
-    return{x:FIELD_W,gapTop,passed:false};
+  function rr(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();}
+  function heart(ctx,cx,cy,s){const h=s*0.6;ctx.beginPath();ctx.moveTo(cx,cy+h*1.4);ctx.bezierCurveTo(cx-h*2.2,cy-h*0.2,cx-h*2.2,cy-h*1.6,cx,cy-h*0.2);ctx.bezierCurveTo(cx+h*2.2,cy-h*1.6,cx+h*2.2,cy-h*0.2,cx,cy+h*1.4);ctx.fill();}
+
+  function makeSt(){
+    return{bird:{y:CH/2,vy:0,ang:0,trail:[]},pipes:[{x:CW+60,gapY:CH/2,passed:false}],
+      score:0,fr:0,gx:0,
+      stars:[...Array(25)].map(()=>({x:Math.random()*CW,y:Math.random()*CH*0.65,r:Math.random()*1.8+0.4,p:Math.random()*Math.PI*2})),
+      clouds:[{x:60,y:55,w:90},{x:210,y:38,w:110},{x:330,y:70,w:75},{x:480,y:45,w:95}]
+    };
   }
 
-  function startGame(){
-    const s=stateRef.current;
-    s.bird={y:150,vy:0};s.pipes=[];s.score=0;s.frame=0;s.alive=true;s.jumpPending=false;
-    scoreDisp.current=0;setDisplayScore(0);setIsNewBest(false);
-    setPhase("play");
-    rafRef.current=requestAnimationFrame(loop);
-  }
+  function drawScene(ctx,st){
+    // Sky
+    const sky=ctx.createLinearGradient(0,0,0,CH);
+    sky.addColorStop(0,T.bg||'#0d0a1a');sky.addColorStop(0.75,T.surface||'#1a1030');sky.addColorStop(1,'#241510');
+    ctx.fillStyle=sky;ctx.fillRect(0,0,CW,CH);
 
-  function loop(){
-    const s=stateRef.current;
-    if(!s.alive)return;
-    s.frame++;
-    // gravity
-    s.bird.vy+=0.35;
-    if(s.jumpPending){s.bird.vy=-6;s.jumpPending=false;}
-    s.bird.y+=s.bird.vy;
-    // pipes
-    s.pipes=s.pipes.map(p=>({...p,x:p.x-2.5})).filter(p=>p.x>-PIPE_W);
-    if(s.frame%90===0)s.pipes.push(spawnPipe());
-    // score
-    s.pipes.forEach(p=>{
-      if(!p.passed&&p.x+PIPE_W<40){p.passed=true;s.score++;scoreDisp.current=s.score;setDisplayScore(s.score);}
+    // Stars
+    st.stars.forEach(s=>{const a=0.25+0.75*((Math.sin(st.fr*0.04+s.p)+1)/2);ctx.globalAlpha=a;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();});
+    ctx.globalAlpha=1;
+
+    // Clouds parallax
+    ctx.fillStyle='rgba(255,255,255,0.07)';
+    st.clouds.forEach(c=>{const cx=((c.x-st.gx*0.25)%CW+CW)%CW;ctx.beginPath();ctx.ellipse(cx,c.y,c.w/2,20,0,0,Math.PI*2);ctx.fill();if(cx+c.w/2>CW){ctx.beginPath();ctx.ellipse(cx-CW,c.y,c.w/2,20,0,0,Math.PI*2);ctx.fill();}});
+
+    // Pipes
+    st.pipes.forEach(p=>{
+      const topH=p.gapY-GAP/2;
+      const botY=p.gapY+GAP/2,botH=CH-botY-32;
+      // pipe glow
+      ctx.shadowColor=T.a2||'#7c5ce0';ctx.shadowBlur=16;
+      const pgTop=ctx.createLinearGradient(p.x,0,p.x+PIPE_W,0);
+      pgTop.addColorStop(0,T.a2||'#7c5ce0');pgTop.addColorStop(0.45,'rgba(255,255,255,0.18)');pgTop.addColorStop(1,T.a3||'#c77dff');
+      ctx.fillStyle=pgTop;rr(ctx,p.x,0,PIPE_W,topH,4);ctx.fill();
+      ctx.fillStyle=T.a1;rr(ctx,p.x-5,topH-18,PIPE_W+10,22,7);ctx.fill();
+      const pgBot=ctx.createLinearGradient(p.x,0,p.x+PIPE_W,0);
+      pgBot.addColorStop(0,T.a2);pgBot.addColorStop(0.45,'rgba(255,255,255,0.18)');pgBot.addColorStop(1,T.a3);
+      ctx.fillStyle=pgBot;rr(ctx,p.x,botY,PIPE_W,botH,4);ctx.fill();
+      ctx.fillStyle=T.a1;rr(ctx,p.x-5,botY-4,PIPE_W+10,22,7);ctx.fill();
+      ctx.shadowBlur=0;
     });
-    // collision: ceiling/floor
-    if(s.bird.y<0||s.bird.y>FIELD_H-16){s.alive=false;endGame();return;}
-    // pipe collision (bird at x=40, radius 12)
-    for(const p of s.pipes){
-      if(p.x<76&&p.x+PIPE_W>28){
-        if(s.bird.y<p.gapTop||s.bird.y+16>p.gapTop+GAP){s.alive=false;endGame();return;}
-      }
+
+    // Ground
+    const gr=ctx.createLinearGradient(0,CH-32,0,CH);gr.addColorStop(0,'#3a2818');gr.addColorStop(1,'#1a1008');
+    ctx.fillStyle=gr;ctx.fillRect(0,CH-32,CW,32);
+    ctx.strokeStyle='rgba(255,255,255,0.07)';ctx.lineWidth=1;
+    for(let i=0;i<CW+40;i+=36){const ox=(i-st.gx*1.8%36+36)%36-36;ctx.beginPath();ctx.moveTo(ox,CH-32);ctx.lineTo(ox+18,CH);ctx.stroke();}
+
+    // Bird trail
+    const b=st.bird;
+    b.trail.forEach((t,i)=>{const a=(i/b.trail.length)*0.35;ctx.globalAlpha=a;ctx.fillStyle=T.a1;ctx.shadowColor=T.a1;ctx.shadowBlur=10;heart(ctx,t.x,t.y,8*(0.4+i/b.trail.length*0.6));});
+    ctx.globalAlpha=1;ctx.shadowBlur=0;
+
+    // Bird
+    ctx.save();ctx.translate(BIRD_X,b.y);ctx.rotate(b.ang);
+    ctx.shadowColor=T.a1;ctx.shadowBlur=24;ctx.fillStyle=T.a1;heart(ctx,0,0,BIRD_R);
+    ctx.shadowBlur=0;ctx.globalAlpha=0.38;ctx.fillStyle='#fff';heart(ctx,-3,-4,7);ctx.globalAlpha=1;
+    ctx.restore();
+
+    // Score badge
+    ctx.fillStyle='rgba(0,0,0,0.4)';ctx.beginPath();ctx.arc(CW/2,26,24,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 18px Sora,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(st.score,CW/2,26);
+
+    if(st.fr<100){ctx.globalAlpha=Math.max(0,(100-st.fr)/100);ctx.fillStyle='rgba(255,255,255,0.8)';ctx.font='14px Sora,sans-serif';ctx.fillText('Tocca per volare 💕',CW/2,CH-52);ctx.globalAlpha=1;}
+  }
+
+  useEffect(()=>{
+    if(phase!=='play')return;
+    const cv=canvasRef.current;if(!cv)return;
+    const ctx=cv.getContext('2d');
+    const st=makeSt();stRef.current=st;
+
+    function end(sc){cancelAnimationFrame(rafRef.current);finalRef.current=sc;
+      const bst=parseInt(localStorage.getItem('bly_flappy_best')||'0');
+      if(sc>bst){localStorage.setItem('bly_flappy_best',String(sc));setIsNewBest(true);}
+      if(sc>0)setCp(p=>p+game.cp);drawScene(ctx,st);setPhase('over');}
+
+    function tick(){
+      const b=st.bird;st.fr++;
+      b.vy+=GRAVITY;b.y+=b.vy;b.ang=Math.max(-0.6,Math.min(0.8,b.vy*0.07));
+      b.trail.push({x:BIRD_X,y:b.y});if(b.trail.length>12)b.trail.shift();
+      st.gx+=SPEED;
+      st.pipes=st.pipes.map(p=>({...p,x:p.x-SPEED})).filter(p=>p.x>-PIPE_W-30);
+      if(!st.pipes.length||st.pipes[st.pipes.length-1].x<CW-200)
+        st.pipes.push({x:CW+20,gapY:80+Math.random()*(CH-GAP-140),passed:false});
+      st.pipes.forEach(p=>{if(!p.passed&&p.x+PIPE_W<BIRD_X-BIRD_R){p.passed=true;st.score++;setDisplayScore(st.score);}});
+      if(b.y+BIRD_R>CH-32||b.y-BIRD_R<0){end(st.score);return;}
+      for(const p of st.pipes){if(BIRD_X+BIRD_R>p.x&&BIRD_X-BIRD_R<p.x+PIPE_W){if(b.y-BIRD_R<p.gapY-GAP/2||b.y+BIRD_R>p.gapY+GAP/2){end(st.score);return;}}}
+      drawScene(ctx,st);rafRef.current=requestAnimationFrame(tick);
     }
-    if(s.frame%3===0)setRenderTick(v=>v+1);
-    rafRef.current=requestAnimationFrame(loop);
-  }
+    rafRef.current=requestAnimationFrame(tick);
+    return()=>cancelAnimationFrame(rafRef.current);
+  },[phase]);
 
-  function endGame(){
-    cancelAnimationFrame(rafRef.current);
-    const sc=stateRef.current.score;
-    finalScore.current=sc;
-    const stored=parseInt(localStorage.getItem("bly_flappy_best")||"0");
-    if(sc>stored){localStorage.setItem("bly_flappy_best",String(sc));setIsNewBest(true);}
-    if(sc>0)setCp(p=>p+game.cp);
-    setPhase("over");
-  }
+  function jump(){const st=stRef.current;if(!st)return;st.bird.vy=JUMP_VEL;st.bird.trail=[];}
+  const best=parseInt(localStorage.getItem('bly_flappy_best')||'0');
+  const csw=Math.min((typeof window!=='undefined'?window.innerWidth:320)-24,360);
+  const csh=Math.round(csw*(CH/CW));
 
-  function jump(){
-    if(phase==="play")stateRef.current.jumpPending=true;
-    else if(phase==="intro")startGame();
-  }
-
-  useEffect(()=>()=>{cancelAnimationFrame(rafRef.current);},[]);
-
-  const s=stateRef.current;
-  const tilt=phase==="play"?Math.max(-30,Math.min(30,s.bird.vy*3)):0;
-
-  if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
+  if(phase==='intro')return(<div style={{padding:20,paddingBottom:90}}>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
-    <div style={{textAlign:"center",padding:"36px 0"}}>
-      <div style={{fontSize:60,marginBottom:18}}>❤️</div>
+    <div style={{textAlign:"center",padding:"24px 0"}}>
+      <div style={{fontSize:64,marginBottom:16}}>❤️</div>
       <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Cuore Volante</div>
-      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Tocca per far volare il cuore tra i tubi! Attento a non cadere. <b style={{color:T.text}}>Batti il record della coppia!</b></div>
-      {best>0&&<div style={{marginTop:16,fontSize:13,color:T.a1,fontWeight:700}}>🏆 Record: {best} tubi</div>}
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Tocca o swipe per far volare il cuore tra le colonne! Parallax, trail e glow a 60fps.</div>
+      {best>0&&<div style={{marginTop:14,fontSize:13,color:T.a1,fontWeight:700}}>🏆 Record: {best} 💕</div>}
     </div>
-    <Btn T={T} grad={grad} onClick={startGame}>Vola! ❤️</Btn>
+    <Btn T={T} grad={G[game.g]} onClick={()=>setPhase('play')}>Vola! ❤️</Btn>
   </div>);
 
-  if(phase==="over"){
-    const stored=parseInt(localStorage.getItem("bly_flappy_best")||"0");
-    return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
-      {isNewBest&&<WinParticles/>}
-      <div style={{fontSize:60,marginBottom:16}}>❤️</div>
-      <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Atterrato!</div>
-      <div style={{fontSize:42,fontWeight:800,color:T.a1,marginBottom:4}}>{finalScore.current}</div>
-      <div style={{fontSize:14,color:T.sub,marginBottom:8}}>tubi superati</div>
-      {isNewBest&&<div style={{fontSize:15,fontWeight:800,color:T.a1,marginBottom:8}}>🏆 NUOVO RECORD!</div>}
-      <div style={{fontSize:13,color:T.faint,marginBottom:4}}>Best: {stored}</div>
-      <div style={{fontSize:13,color:T.faint,marginBottom:30}}>{finalScore.current>0?`+${game.cp} punti · ora tocca al partner! 😏`:"Riprova!"}</div>
-      <Btn T={T} grad={grad} onClick={startGame}>Rigioca</Btn>
-      <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
-    </div>);
-  }
+  if(phase==='over')return(<div style={{padding:24,textAlign:"center",paddingTop:60}}>
+    {isNewBest&&<WinParticles/>}
+    <div style={{fontSize:56,marginBottom:12}}>❤️</div>
+    <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Atterrato!</div>
+    <div style={{fontSize:52,fontWeight:900,color:T.a1,marginBottom:2}}>{finalRef.current}</div>
+    <div style={{fontSize:14,color:T.sub,marginBottom:8}}>tubi superati</div>
+    {isNewBest&&<div style={{fontSize:15,fontWeight:800,color:T.a3,marginBottom:8}}>🏆 NUOVO RECORD!</div>}
+    <div style={{fontSize:13,color:T.faint,marginBottom:4}}>Best: {Math.max(best,finalRef.current)}</div>
+    <div style={{fontSize:13,color:T.faint,marginBottom:28}}>{finalRef.current>0?`+${game.cp} punti coppia 💞`:"Riprova!"}</div>
+    <Btn T={T} grad={G[game.g]} onClick={()=>{setIsNewBest(false);setPhase('play');}}>Rigioca</Btn>
+    <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
+  </div>);
 
-  return(<div style={{padding:20,paddingBottom:90}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+  return(<div style={{padding:"12px 12px 90px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
       <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
       <span style={{fontSize:16,fontWeight:800,color:T.a1}}>❤️ {displayScore}</span>
     </div>
-    <div onClick={jump} onTouchStart={e=>{e.preventDefault();jump();}}
-      style={{position:"relative",width:FIELD_W,maxWidth:"100%",height:FIELD_H,margin:"0 auto",background:`linear-gradient(180deg,${T.a4}22,${T.surface})`,borderRadius:18,border:`1px solid ${T.line2}`,overflow:"hidden",cursor:"pointer",touchAction:"none",userSelect:"none"}}>
-      {/* pipes */}
-      {s.pipes.map((p,i)=>(
-        <div key={i}>
-          <div style={{position:"absolute",left:p.x,top:0,width:PIPE_W,height:p.gapTop,background:`linear-gradient(180deg,${T.a1},${T.a2})`,borderRadius:"0 0 8px 8px",boxShadow:`2px 0 8px ${T.a1}44`}}/>
-          <div style={{position:"absolute",left:p.x,top:p.gapTop+GAP,width:PIPE_W,height:FIELD_H-(p.gapTop+GAP),background:`linear-gradient(0deg,${T.a1},${T.a2})`,borderRadius:"8px 8px 0 0",boxShadow:`2px 0 8px ${T.a1}44`}}/>
-        </div>
-      ))}
-      {/* bird */}
-      <div style={{position:"absolute",left:40,top:s.bird.y,fontSize:22,transform:`rotate(${tilt}deg)`,transition:"transform 0.05s",userSelect:"none"}}>❤️</div>
-      <div style={{position:"absolute",top:10,left:0,right:0,textAlign:"center",fontSize:20,fontWeight:900,color:T.text,opacity:0.7}}>{displayScore}</div>
-      <div style={{position:"absolute",bottom:10,left:0,right:0,textAlign:"center",fontSize:12,color:T.faint}}>Tocca per saltare 👆</div>
+    <div style={{display:"flex",justifyContent:"center"}}>
+      <canvas ref={canvasRef} width={CW} height={CH}
+        style={{width:csw,height:csh,borderRadius:20,border:`2px solid ${T.line2}`,display:"block",touchAction:"none",cursor:"pointer",boxShadow:`0 0 40px ${T.a1}22,0 8px 32px rgba(0,0,0,0.4)`}}
+        onClick={jump} onTouchStart={e=>{e.preventDefault();jump();}}/>
     </div>
+    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:10}}>Tocca il canvas per saltare ❤️</div>
   </div>);
 }
 
@@ -2500,154 +2641,133 @@ function BubblePop({game,onBack,setCp,onToast,T,G}){
 
 // ════════ SNAKE — snake romantico (improved) ════════
 function Snake({game,onBack,setCp,onToast,T,G}){
-  const grad=G[game.g];
-  const N=16;
-  const BASE_SPEED=180;
-  const [phase,setPhase]=useState("intro");
-  const [snake,setSnake]=useState([{x:8,y:8}]);
-  const [dir,setDir]=useState({x:1,y:0});
-  const [food,setFood]=useState({x:12,y:8});
-  const [bonus,setBonus]=useState(null); // {x,y,expire} diamond bonus
-  const [score,setScore]=useState(0);
-  const [best]=useState(()=>parseInt(localStorage.getItem("bly_snake_best")||"0"));
-  const dirRef=useRef({x:1,y:0});
-  const snakeRef=useRef([{x:8,y:8}]);
-  const scoreRef=useRef(0);
-  const bonusRef=useRef(null);
+  const COLS=20,ROWS=20,CELL=20,W=400,H=400;
+  const canvasRef=useRef(null);
+  const stRef=useRef(null);
+  const rafRef=useRef(null);
   const swipeRef=useRef(null);
+  const [phase,setPhase]=useState("intro");
+  const [displayScore,setDisplayScore]=useState(0);
+  const [isNewBest,setIsNewBest]=useState(false);
+  const finalRef=useRef(0);
 
-  function placeRandom(sn){let f;do{f={x:Math.floor(Math.random()*N),y:Math.floor(Math.random()*N)};}while(sn.some(s=>s.x===f.x&&s.y===f.y));return f;}
-  function start(){
-    const s=[{x:8,y:8}];
-    setSnake(s);snakeRef.current=s;
-    const d={x:1,y:0};setDir(d);dirRef.current=d;
-    const f=placeRandom(s);setFood(f);
-    setBonus(null);bonusRef.current=null;
-    scoreRef.current=0;setScore(0);
-    setPhase("play");
+  function rr(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();}
+  function rand(sn,ex){let f;do{f={x:Math.floor(Math.random()*COLS),y:Math.floor(Math.random()*ROWS)};}while(sn.some(s=>s.x===f.x&&s.y===f.y)||(ex&&ex.x===f.x&&ex.y===f.y));return f;}
+
+  function makeSt(){return{snake:[{x:10,y:10},{x:9,y:10},{x:8,y:10}],dir:{x:1,y:0},nextDir:{x:1,y:0},food:{x:15,y:10},bonus:null,bonusT:0,score:0,fr:0,mfr:0,parts:[],floats:[],over:false};}
+
+  function draw(ctx,st){
+    const g=ctx.createLinearGradient(0,0,W,H);g.addColorStop(0,T.bg||'#0d0a1a');g.addColorStop(1,T.surface||'#1a1030');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='rgba(255,255,255,0.03)';
+    for(let x=0;x<COLS;x++)for(let y=0;y<ROWS;y++){ctx.beginPath();ctx.arc(x*CELL+CELL/2,y*CELL+CELL/2,1,0,Math.PI*2);ctx.fill();}
+    for(let i=st.snake.length-1;i>=0;i--){
+      const s=st.snake[i],t=i/Math.max(1,st.snake.length-1);
+      const px=s.x*CELL+2,py=s.y*CELL+2,pw=CELL-4,ph=CELL-4;
+      if(i===0){ctx.shadowColor=T.a1;ctx.shadowBlur=20;ctx.fillStyle=T.a1;rr(ctx,px-1,py-1,pw+2,ph+2,7);ctx.fill();ctx.shadowBlur=0;
+        const d=st.dir,ex=s.x*CELL+CELL/2,ey=s.y*CELL+CELL/2;
+        ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(ex+d.x*3-d.y*4,ey+d.y*3-d.x*4,2.5,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.arc(ex+d.x*3+d.y*4,ey+d.y*3+d.x*4,2.5,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle='#111';ctx.beginPath();ctx.arc(ex+d.x*4.5-d.y*4,ey+d.y*4.5-d.x*4,1.3,0,Math.PI*2);ctx.fill();
+        ctx.beginPath();ctx.arc(ex+d.x*4.5+d.y*4,ey+d.y*4.5+d.x*4,1.3,0,Math.PI*2);ctx.fill();
+      } else {
+        const a=Math.max(0.18,1-t*0.72);
+        ctx.globalAlpha=a;ctx.shadowColor=t<0.4?T.a2:T.a3;ctx.shadowBlur=t<0.3?10:4;
+        ctx.fillStyle=t<0.4?T.a2:t<0.7?T.a3:T.a4;
+        rr(ctx,px,py,pw,ph,4);ctx.fill();ctx.globalAlpha=1;ctx.shadowBlur=0;
+      }
+    }
+    const fp=st.food,pulse=Math.sin(st.fr*0.12)*3;
+    ctx.shadowColor=T.a1;ctx.shadowBlur=14+pulse;ctx.font=`${CELL}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('💕',fp.x*CELL+CELL/2,fp.y*CELL+CELL/2+1);ctx.shadowBlur=0;
+    if(st.bonus){const blink=Math.floor(st.fr/7)%2;if(blink||st.bonusT>180){ctx.shadowColor='#FFD700';ctx.shadowBlur=18;ctx.fillText('💎',st.bonus.x*CELL+CELL/2,st.bonus.y*CELL+CELL/2+1);ctx.shadowBlur=0;}}
+    st.parts.forEach(p=>{const a=p.l/p.ml;ctx.globalAlpha=a;ctx.fillStyle=p.c;ctx.shadowColor=p.c;ctx.shadowBlur=8;ctx.beginPath();ctx.arc(p.x,p.y,p.s*(0.4+a*0.6),0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;ctx.shadowBlur=0;});
+    st.floats.forEach(f=>{const a=f.l/f.ml;ctx.globalAlpha=a;ctx.fillStyle=f.c||T.a1;ctx.font=`800 ${f.sz||16}px Sora,sans-serif`;ctx.textAlign='center';ctx.fillText(f.t,f.x,f.y);ctx.globalAlpha=1;});
   }
 
   useEffect(()=>{
-    if(phase!=="play")return;
-    const speed=Math.max(80,BASE_SPEED-scoreRef.current*5);
-    const t=setInterval(()=>{
-      const sn=snakeRef.current;const d=dirRef.current;
-      // wall wrapping
-      let hx=(sn[0].x+d.x+N)%N;
-      let hy=(sn[0].y+d.y+N)%N;
-      const head={x:hx,y:hy};
-      // only body collision kills
-      if(sn.slice(1).some(s=>s.x===head.x&&s.y===head.y)){
-        const sc=scoreRef.current;
-        const stored=parseInt(localStorage.getItem("bly_snake_best")||"0");
-        if(sc>stored)localStorage.setItem("bly_snake_best",String(sc));
-        if(sc>0)setCp(p=>p+game.cp);
-        setPhase("over");return;
-      }
-      const ateFood=head.x===food.x&&head.y===food.y;
-      const ateBonus=bonusRef.current&&head.x===bonusRef.current.x&&head.y===bonusRef.current.y;
-      const ns=[head,...sn];
-      if(!ateFood&&!ateBonus)ns.pop();
-      snakeRef.current=ns;
-      setSnake([...ns]);
-      if(ateFood){
-        const ns2=scoreRef.current+1;scoreRef.current=ns2;setScore(ns2);
-        setFood(placeRandom(ns));
-        // every 5 food spawn diamond bonus
-        if(ns2%5===0){
-          const b=placeRandom(ns);
-          const expire=Date.now()+4000;
-          bonusRef.current={...b,expire};
-          setBonus({...b,expire});
-          setTimeout(()=>{bonusRef.current=null;setBonus(null);},4000);
+    if(phase!=='play')return;
+    const cv=canvasRef.current;if(!cv)return;
+    const ctx=cv.getContext('2d');
+    const st=makeSt();stRef.current=st;
+    function tick(){
+      st.fr++;st.mfr++;
+      const mi=Math.max(4,10-Math.floor(st.score*0.28));
+      if(st.mfr>=mi){
+        st.mfr=0;st.dir={...st.nextDir};
+        const h={x:(st.snake[0].x+st.dir.x+COLS)%COLS,y:(st.snake[0].y+st.dir.y+ROWS)%ROWS};
+        if(st.snake.slice(1).some(s=>s.x===h.x&&s.y===h.y)){
+          finalRef.current=st.score;
+          const bst=parseInt(localStorage.getItem('bly_snake_best')||'0');
+          if(st.score>bst){localStorage.setItem('bly_snake_best',String(st.score));setIsNewBest(true);}
+          if(st.score>0)setCp(p=>p+game.cp);
+          draw(ctx,st);setDisplayScore(st.score);setPhase('over');return;
         }
+        const af=h.x===st.food.x&&h.y===st.food.y;
+        const ab=st.bonus&&h.x===st.bonus.x&&h.y===st.bonus.y;
+        st.snake=[h,...st.snake];if(!af&&!ab)st.snake.pop();
+        if(af){st.score++;setDisplayScore(st.score);for(let i=0;i<12;i++)st.parts.push({x:h.x*CELL+CELL/2,y:h.y*CELL+CELL/2,vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5-2,l:30,ml:30,c:T.a1,s:4});st.floats.push({t:'+1',x:h.x*CELL+CELL/2,y:h.y*CELL,vy:-1.3,l:38,ml:38,c:T.a1,sz:16});st.food=rand(st.snake,st.bonus);if(st.score%5===0){st.bonus=rand(st.snake,st.food);st.bonusT=300;}}
+        if(ab){st.score+=3;setDisplayScore(st.score);for(let i=0;i<18;i++)st.parts.push({x:h.x*CELL+CELL/2,y:h.y*CELL+CELL/2,vx:(Math.random()-.5)*7,vy:(Math.random()-.5)*7-2,l:40,ml:40,c:'#FFD700',s:5});st.floats.push({t:'💎 +3',x:h.x*CELL+CELL/2,y:h.y*CELL,vy:-1.6,l:50,ml:50,c:'#FFD700',sz:20});st.bonus=null;}
       }
-      if(ateBonus){
-        const ns2=scoreRef.current+3;scoreRef.current=ns2;setScore(ns2);
-        bonusRef.current=null;setBonus(null);
-        onToast("💎 +3!");
-      }
-      // check bonus expiry
-      if(bonusRef.current&&Date.now()>bonusRef.current.expire){bonusRef.current=null;setBonus(null);}
-    },speed);
-    return()=>clearInterval(t);
-  },[phase,food]);
+      if(st.bonus){st.bonusT--;if(st.bonusT<=0)st.bonus=null;}
+      st.parts=st.parts.filter(p=>p.l>0);st.parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.18;p.l--;});
+      st.floats=st.floats.filter(f=>f.l>0);st.floats.forEach(f=>{f.y+=f.vy;f.l--;});
+      draw(ctx,st);
+      rafRef.current=requestAnimationFrame(tick);
+    }
+    rafRef.current=requestAnimationFrame(tick);
+    return()=>cancelAnimationFrame(rafRef.current);
+  },[phase]);
 
-  function turn(nx,ny){const d=dirRef.current;if(d.x===-nx&&d.y===-ny)return;const nd={x:nx,y:ny};setDir(nd);dirRef.current=nd;}
-  function swipeStart(e){const t=e.touches[0];swipeRef.current={x:t.clientX,y:t.clientY};}
-  function swipeEnd(e){
-    if(!swipeRef.current)return;
-    const t=e.changedTouches[0];const dx=t.clientX-swipeRef.current.x,dy=t.clientY-swipeRef.current.y;swipeRef.current=null;
-    if(Math.abs(dx)<20&&Math.abs(dy)<20)return;
-    if(Math.abs(dx)>Math.abs(dy)){turn(dx>0?1:-1,0);}else{turn(0,dy>0?1:-1);}
-  }
+  const nd=useCallback((nx,ny)=>{const st=stRef.current;if(!st)return;if(st.dir.x===-nx&&st.dir.y===-ny)return;st.nextDir={x:nx,y:ny};},[]);
+  function swS(e){const t=e.touches[0];swipeRef.current={x:t.clientX,y:t.clientY};}
+  function swE(e){if(!swipeRef.current)return;const t=e.changedTouches[0];const dx=t.clientX-swipeRef.current.x,dy=t.clientY-swipeRef.current.y;swipeRef.current=null;if(Math.abs(dx)<18&&Math.abs(dy)<18)return;if(Math.abs(dx)>Math.abs(dy))nd(dx>0?1:-1,0);else nd(0,dy>0?1:-1);}
+  const best=parseInt(localStorage.getItem('bly_snake_best')||'0');
+  const csz=Math.min((typeof window!=='undefined'?window.innerWidth:400)-40,400);
 
-  const currentBest=Math.max(best,score);
-
-  if(phase==="intro")return(<div style={{padding:20,paddingBottom:90}}>
+  if(phase==='intro')return(<div style={{padding:20,paddingBottom:90}}>
     <div style={{display:"flex",justifyContent:"space-between",marginBottom:16}}><span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Indietro</span><span style={{fontSize:13,color:T.faint}}>👤 Da solo</span></div>
-    <div style={{textAlign:"center",padding:"36px 0"}}>
-      <div style={{fontSize:60,marginBottom:18}}>🐍</div>
+    <div style={{textAlign:"center",padding:"24px 0"}}>
+      <div style={{fontSize:64,marginBottom:16}}>🐍</div>
       <div style={{fontFamily:"'Sora',sans-serif",fontSize:22,fontWeight:800,marginBottom:12}}>Snake Romantico</div>
-      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Mangia i cuori 💕 e cresci. Passa attraverso i muri! Solo il tuo corpo ti ferma. Ogni 5 cuori appare un 💎 bonus!</div>
-      {best>0&&<div style={{marginTop:16,fontSize:13,color:T.a3,fontWeight:700}}>🏆 Record: {best} cuori</div>}
+      <div style={{fontSize:15,color:T.sub,lineHeight:1.6,maxWidth:300,margin:"0 auto"}}>Mangia i cuori 💕 e cresci a 60fps! Attraversa i muri. Ogni 5 cuori appare il 💎 bonus +3.</div>
+      {best>0&&<div style={{marginTop:14,fontSize:13,color:T.a3,fontWeight:700}}>🏆 Record: {best} cuori</div>}
     </div>
-    <Btn T={T} grad={grad} onClick={start}>Inizia 🐍</Btn>
+    <Btn T={T} grad={G[game.g]} onClick={()=>setPhase('play')}>Inizia 🐍</Btn>
   </div>);
 
-  if(phase==="over"){
-    const stored=parseInt(localStorage.getItem("bly_snake_best")||"0");
-    const isNew=score>best;
-    return(<div style={{padding:24,textAlign:"center",paddingTop:70}}>
-      <WinParticles/>
-      <div style={{fontSize:60,marginBottom:16}}>💕</div>
-      <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Game Over!</div>
-      <div style={{fontSize:42,fontWeight:800,color:T.a3,marginBottom:4}}>{score}</div>
-      <div style={{fontSize:14,color:T.sub,marginBottom:8}}>cuori mangiati</div>
-      {isNew&&<div style={{fontSize:15,fontWeight:800,color:T.a1,marginBottom:8}}>🏆 NUOVO RECORD!</div>}
-      <div style={{fontSize:13,color:T.faint,marginBottom:8}}>Best: {stored} cuori</div>
-      <div style={{fontSize:13,color:T.faint,marginBottom:30}}>{score>0?`+${game.cp} punti · tocca al partner! 😏`:"Riprovate!"}</div>
-      <Btn T={T} grad={grad} onClick={start}>Rigioca</Btn>
-      <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
-    </div>);
-  }
+  if(phase==='over')return(<div style={{padding:24,textAlign:"center",paddingTop:60}}>
+    {isNewBest&&<WinParticles/>}
+    <div style={{fontSize:56,marginBottom:12}}>💕</div>
+    <div style={{fontFamily:"'Sora',sans-serif",fontSize:24,fontWeight:800,marginBottom:6}}>Game Over!</div>
+    <div style={{fontSize:52,fontWeight:900,color:T.a1,marginBottom:2}}>{finalRef.current}</div>
+    <div style={{fontSize:14,color:T.sub,marginBottom:8}}>cuori mangiati</div>
+    {isNewBest&&<div style={{fontSize:15,fontWeight:800,color:T.a3,marginBottom:8}}>🏆 NUOVO RECORD!</div>}
+    <div style={{fontSize:13,color:T.faint,marginBottom:4}}>Best: {Math.max(best,finalRef.current)}</div>
+    <div style={{fontSize:13,color:T.faint,marginBottom:28}}>{finalRef.current>0?`+${game.cp} punti coppia 💞`:"Riprova!"}</div>
+    <Btn T={T} grad={G[game.g]} onClick={()=>{setIsNewBest(false);setPhase('play');}}>Rigioca</Btn>
+    <Btn T={T} variant="ghost" onClick={onBack} style={{marginTop:10}}>Concludi</Btn>
+  </div>);
 
-  return(<div style={{padding:20,paddingBottom:90}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+  return(<div style={{padding:"16px 16px 90px"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
       <span onClick={onBack} style={{fontSize:14,color:T.sub,cursor:"pointer"}}>← Esci</span>
-      <div style={{display:"flex",gap:12,alignItems:"center"}}>
-        <span style={{fontSize:16,fontWeight:800,color:T.a3}}>💕 {score}</span>
-        <span style={{fontSize:12,color:T.faint}}>Best:{currentBest}</span>
-      </div>
+      <span style={{fontSize:16,fontWeight:800,color:T.a1}}>💕 {displayScore}</span>
     </div>
-    <div onTouchStart={swipeStart} onTouchEnd={swipeEnd}
-      style={{aspectRatio:"1",background:`linear-gradient(135deg,${T.surface},${T.surface2})`,borderRadius:16,border:`1px solid ${T.line2}`,padding:4,display:"grid",gridTemplateColumns:`repeat(${N},1fr)`,gridTemplateRows:`repeat(${N},1fr)`,gap:1,touchAction:"none"}}>
-      {Array.from({length:N*N}).map((_,i)=>{
-        const x=i%N,y=Math.floor(i/N);
-        const headIdx=snake.findIndex((s,j)=>j===0&&s.x===x&&s.y===y);
-        const bodyIdx=snake.findIndex((s,j)=>j>0&&s.x===x&&s.y===y);
-        const isHead=headIdx===0&&snake[0].x===x&&snake[0].y===y;
-        const isBody=!isHead&&snake.some((s,j)=>j>0&&s.x===x&&s.y===y);
-        const bodyPos=isBody?snake.findIndex((s,j)=>j>0&&s.x===x&&s.y===y):-1;
-        const isFood=food.x===x&&food.y===y;
-        const isBonus=bonus&&bonus.x===x&&bonus.y===y;
-        let bg="transparent";
-        if(isHead)bg=T.a1;
-        else if(isBody){const t=bodyPos/snake.length;bg=t<0.33?T.a2:t<0.66?T.a3:T.a4;}
-        return(<div key={i} style={{borderRadius:isHead?5:3,background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"min(3vw,12px)",transition:isHead?"none":"background 0.3s"}}>
-          {isFood?"💕":isBonus?"💎":""}
-        </div>);
-      })}
+    <div style={{display:"flex",justifyContent:"center"}}>
+      <canvas ref={canvasRef} width={W} height={H}
+        style={{width:csz,height:csz,borderRadius:18,border:`2px solid ${T.line2}`,display:"block",touchAction:"none",boxShadow:`0 0 40px ${T.a1}22,0 8px 32px rgba(0,0,0,0.3)`}}
+        onTouchStart={swS} onTouchEnd={swE}/>
     </div>
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginTop:14,gap:6}}>
-      <DBtn T={T} grad={grad} on={()=>turn(0,-1)}>▲</DBtn>
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginTop:14,gap:8}}>
+      <DBtn T={T} grad={G[game.g]} on={()=>nd(0,-1)}>▲</DBtn>
       <div style={{display:"flex",gap:48}}>
-        <DBtn T={T} grad={grad} on={()=>turn(-1,0)}>◀</DBtn>
-        <DBtn T={T} grad={grad} on={()=>turn(0,1)}>▼</DBtn>
-        <DBtn T={T} grad={grad} on={()=>turn(1,0)}>▶</DBtn>
+        <DBtn T={T} grad={G[game.g]} on={()=>nd(-1,0)}>◀</DBtn>
+        <DBtn T={T} grad={G[game.g]} on={()=>nd(0,1)}>▼</DBtn>
+        <DBtn T={T} grad={G[game.g]} on={()=>nd(1,0)}>▶</DBtn>
       </div>
     </div>
-    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:8}}>Swipe o frecce · passa attraverso i muri! 💕</div>
+    <div style={{fontSize:12,color:T.faint,textAlign:"center",marginTop:8}}>Swipe o D-pad · attraversa i muri! 💕</div>
   </div>);
 }
 
