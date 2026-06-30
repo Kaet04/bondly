@@ -4760,7 +4760,7 @@ export default function Bondly(){
   const [coupleId,setCoupleId]=useState(null);
   const [coupleReady,setCoupleReady]=useState(false);
   const [splash,setSplash]=useState(true);
-  // Persist state changes
+  // Persist state to localStorage (immediate)
   useEffect(()=>{_lsSet('bly_theme',themeName);},[themeName]);
   useEffect(()=>{_lsSet('bly_cp',cp);},[cp]);
   useEffect(()=>{_lsSet('bly_wallet',wallet);},[wallet]);
@@ -4769,6 +4769,28 @@ export default function Bondly(){
   useEffect(()=>{_lsSet('bly_avatars',avatars);},[avatars]);
   useEffect(()=>{_lsSet('bly_owned',ownedItems);},[ownedItems]);
   useEffect(()=>{_lsSet('bly_streak',streak);},[streak]);
+  // Supabase cloud sync (debounced 900ms)
+  const _syncT=useRef({});
+  function _dbq(k,fn){clearTimeout(_syncT.current[k]);_syncT.current[k]=setTimeout(fn,900);}
+  // Couple-shared data → couples table
+  useEffect(()=>{if(!coupleId)return;_dbq('cp',()=>supabase.from("couples").update({cp}).eq("id",coupleId).catch(()=>{}));},[cp,coupleId]);
+  useEffect(()=>{if(!coupleId)return;_dbq('wl',()=>supabase.from("couples").update({wallet}).eq("id",coupleId).catch(()=>{}));},[wallet,coupleId]);
+  useEffect(()=>{if(!coupleId)return;_dbq('oi',()=>supabase.from("couples").update({owned_items:ownedItems}).eq("id",coupleId).catch(()=>{}));},[ownedItems,coupleId]);
+  // Per-user data → profiles table
+  useEffect(()=>{if(!userId)return;_dbq('pf',()=>supabase.from("profiles").update({tokens,tickets,streak}).eq("id",userId).catch(()=>{}));},[tokens,tickets,streak,userId]);
+  // Realtime: receive partner changes to couple-shared data
+  useEffect(()=>{
+    if(!coupleId)return;
+    const ch=supabase.channel(`cp-sync-${coupleId}`)
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"couples",filter:`id=eq.${coupleId}`},(p)=>{
+        const d=p.new;
+        if(d.cp!=null)setCp(prev=>d.cp>prev?d.cp:prev);
+        if(d.wallet!=null)setWallet(d.wallet);
+        if(d.owned_items?.length)setOwnedItems(prev=>{const m=[...new Set([...prev,...d.owned_items])];return m.length>prev.length?m:prev;});
+      })
+      .subscribe();
+    return()=>supabase.removeChannel(ch);
+  },[coupleId]);
   // Sync own avatar to Supabase so partner devices can read it
   useEffect(()=>{
     if(!userId||!avatars.p1)return;
@@ -4799,24 +4821,36 @@ export default function Bondly(){
       await supabase.from("profiles").upsert({id:uid,name,...(myAvatar?{avatar:myAvatar}:{})},{onConflict:"id",ignoreDuplicates:false}).catch(()=>
         supabase.from("profiles").upsert({id:uid,name},{onConflict:"id",ignoreDuplicates:true})
       );
-      const{data:prof}=await supabase.from("profiles").select("couple_id,avatar,name").eq("id",uid).single();
+      const{data:prof}=await supabase.from("profiles").select("couple_id,avatar,name,tokens,tickets,streak,streak_date").eq("id",uid).single();
       const cid=prof?.couple_id||null;
       setCoupleId(cid);
-      // load own avatar from supabase if richer than local
-      if(prof?.avatar){
-        setAvatars(a=>({...a,p1:{...DEFAULT_AVATARS.p1,...prof.avatar,name:prof.name||a.p1.name}}));
+      // load own avatar
+      if(prof?.avatar){setAvatars(a=>({...a,p1:{...DEFAULT_AVATARS.p1,...prof.avatar,name:prof.name||a.p1.name}}));}
+      // merge per-user cloud progress (take max to handle offline earnings)
+      if((prof?.tokens||0)>0)setTokens(t=>Math.max(t,prof.tokens));
+      if((prof?.tickets||0)>0)setTickets(t=>Math.max(t,prof.tickets));
+      if((prof?.streak||0)>0)setStreak(s=>Math.max(s,prof.streak));
+      // load partner + couple-shared cloud progress
+      if(cid){
+        await loadPartnerProfile(uid,cid);
+        const{data:cpd}=await supabase.from("couples").select("cp,wallet,owned_items").eq("id",cid).single();
+        if(cpd){
+          setCp(p=>Math.max(p,cpd.cp||0));
+          setWallet(w=>Math.max(w,Number(cpd.wallet)||0));
+          if(cpd.owned_items?.length)setOwnedItems(prev=>[...new Set([...prev,...cpd.owned_items])]);
+        }
       }
-      // load partner profile
-      if(cid)await loadPartnerProfile(uid,cid);
       setCoupleReady(true);
       setOnboard(false);
-      // track daily streak
+      // daily streak
       const todayStr=new Date().toDateString();
-      const lastLogin=_lsGet('bly_streak_date',null);
+      const lastLogin=prof?.streak_date||_lsGet('bly_streak_date',null);
       if(lastLogin!==todayStr){
         const yesterday=new Date(Date.now()-86400000).toDateString();
-        setStreak(s=>lastLogin===yesterday?s+1:1);
+        const newS=lastLogin===yesterday?Math.max(1,_lsGet('bly_streak',0))+1:1;
+        setStreak(s=>Math.max(s,newS));
         _lsSet('bly_streak_date',todayStr);
+        supabase.from("profiles").update({streak:newS,streak_date:todayStr}).eq("id",uid).catch(()=>{});
       }
       setAuthed(true);
     });
@@ -4849,15 +4883,46 @@ export default function Bondly(){
       const uid=session.user.id;
       setUserId(uid);
       const name=av?.name||session.user.user_metadata?.full_name||"Utente";
-      await supabase.from("profiles").upsert({id:uid,name},{onConflict:"id",ignoreDuplicates:true});
-      const{data:prof}=await supabase.from("profiles").select("couple_id").eq("id",uid).single();
-      setCoupleId(prof?.couple_id||null);
+      const todayStr=new Date().toDateString();
+      if(av){
+        // new signup: initialize cloud data
+        await supabase.from("profiles").upsert({id:uid,name,tokens:200,streak:1,streak_date:todayStr},{onConflict:"id",ignoreDuplicates:true});
+      } else {
+        await supabase.from("profiles").upsert({id:uid,name},{onConflict:"id",ignoreDuplicates:true});
+      }
+      const{data:prof}=await supabase.from("profiles").select("couple_id,tokens,tickets,streak,streak_date").eq("id",uid).single();
+      const cid=prof?.couple_id||null;
+      setCoupleId(cid);
+      // merge per-user cloud progress (returning login)
+      if(!av){
+        if((prof?.tokens||0)>0)setTokens(t=>Math.max(t,prof.tokens));
+        if((prof?.tickets||0)>0)setTickets(t=>Math.max(t,prof.tickets));
+        if((prof?.streak||0)>0)setStreak(s=>Math.max(s,prof.streak));
+        // daily streak
+        const lastLogin=prof?.streak_date||null;
+        if(lastLogin!==todayStr){
+          const yesterday=new Date(Date.now()-86400000).toDateString();
+          const newS=lastLogin===yesterday?Math.max(1,_lsGet('bly_streak',0))+1:1;
+          setStreak(s=>Math.max(s,newS));
+          _lsSet('bly_streak_date',todayStr);
+          supabase.from("profiles").update({streak:newS,streak_date:todayStr}).eq("id",uid).catch(()=>{});
+        }
+        // load couple-shared data
+        if(cid){
+          const{data:cpd}=await supabase.from("couples").select("cp,wallet,owned_items").eq("id",cid).single();
+          if(cpd){
+            setCp(p=>Math.max(p,cpd.cp||0));
+            setWallet(w=>Math.max(w,Number(cpd.wallet)||0));
+            if(cpd.owned_items?.length)setOwnedItems(prev=>[...new Set([...prev,...cpd.owned_items])]);
+          }
+        }
+      }
       setCoupleReady(true);
     }
     setAuthed(true);
   }}/>;
   if(authed&&!coupleReady) return <Splash T={T} G={G}/>;
-  if(authed&&coupleReady&&!coupleId) return <CoupleSetup T={T} G={G} userId={userId} onDone={(cid)=>{setCoupleId(cid);if(cid&&userId)loadPartnerProfile(userId,cid);}}/>;
+  if(authed&&coupleReady&&!coupleId) return <CoupleSetup T={T} G={G} userId={userId} onDone={async(cid)=>{setCoupleId(cid);if(cid&&userId){await loadPartnerProfile(userId,cid);const{data:cpd}=await supabase.from("couples").select("cp,wallet,owned_items").eq("id",cid).single();if(cpd){setCp(p=>Math.max(p,cpd.cp||0));setWallet(w=>Math.max(w,Number(cpd.wallet)||0));if(cpd.owned_items?.length)setOwnedItems(prev=>[...new Set([...prev,...cpd.owned_items])]);}}}}/>;
   if(onboard) return <Onboarding T={T} G={G} onDone={()=>setOnboard(false)}/>;
 
   return(<div style={{fontFamily:"'Manrope',-apple-system,'Segoe UI',sans-serif",background:T.bgScene||T.bg,height:"100vh",maxWidth:440,margin:"0 auto",color:T.text,display:"flex",flexDirection:"column",overflow:"hidden",transition:"background 0.4s,color 0.4s",position:"relative"}}>
